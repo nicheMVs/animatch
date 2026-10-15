@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import LandingScreen from './components/LandingScreen';
@@ -81,7 +81,6 @@ export default function App() {
     [deck, nextPage, seenIds]
   );
 
-  // Hydrate from cache when entering the game (AniMatch only for now)
   const enterAniMatch = useCallback(() => {
     const cached = getCachedDeck();
     if (cached && cached.characters.length > 0) {
@@ -200,7 +199,6 @@ export default function App() {
             <LandingScreen
               onSelect={(src) => {
                 if (src === 'anilist') enterAniMatch();
-                // gelbooru not enabled yet
               }}
             />
           )}
