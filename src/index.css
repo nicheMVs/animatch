@@ -1,0 +1,47 @@
+@import 'tailwindcss';
+
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap');
+
+@theme {
+  --font-display: 'Instrument Serif', 'Times New Roman', serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --color-ink: #0a0a0f;
+  --color-ink-soft: #131219;
+  --color-accent: #ff5a7a;
+  --color-accent-soft: #ff8fa3;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(255, 90, 122, 0.14) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(120, 90, 255, 0.08) 0%, transparent 55%),
+    #0a0a0f;
+  background-attachment: fixed;
+  color: #f4f2f7;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+h1, h2, h3, .font-display {
+  font-family: 'Instrument Serif', 'Times New Roman', serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.no-touch-scroll {
+  touch-action: none;
+}
+
+img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
