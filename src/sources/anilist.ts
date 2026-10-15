@@ -44,11 +44,11 @@ interface AniListResponse {
 }
 
 const PER_PAGE = 25;
-/** Stop scanning past this page (top ~2,500 popular anime). */
-const MAX_PAGE = 100;
-/** How far to jump ahead between fetches. Keeps the pool diverse. */
-const STRIDE_MIN = 4;
-const STRIDE_MAX = 12;
+
+// Top ~400 popular anime — the biggest hits people actually recognize.
+const TOP_RANGE_END = 16;
+// Deeper range for variety — still popular but less mainstream.
+const VARIETY_RANGE_END = 120;
 
 async function fetchPage(
   page: number
@@ -84,6 +84,20 @@ function toCharacter(row: { character: AniListCharacter; anime: string | null })
   };
 }
 
+/** Fisher-Yates shuffle. */
+function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * Fetch a mix: a couple of pages from the top of popularity, plus a couple
+ * from a random deeper page. Combined with the exclude set, this guarantees
+ * a fresh, recognizable, varied deck every time.
+ */
 async function fetchAnilistCharacters(
   filter: DeckFilter,
   excludeIds: Set<number> = new Set(),
@@ -92,28 +106,36 @@ async function fetchAnilistCharacters(
   target: number = SETTINGS.DECK_SIZE,
   randomStart = false
 ) {
-  const collected: Character[] = [];
   const seen = new Set<number>(excludeIds);
+  const collected: Character[] = [];
   const wantedGender = filter === 'waifus' ? 'female' : 'male';
 
-  // Always start at page 1 so we get some top-tier hits.
-  // Then jump ahead in random strides so we also reach the wider pool.
-  let currentPage = randomStart ? 1 : startPage;
-  const maxIterations = Math.ceil(target / PER_PAGE) + 20;
-  let exhausted = false;
+  // Build a list of pages to scan: 2 from the top, 2-3 from a random deeper section.
+  const pagesToScan: number[] = [];
 
-  for (let i = 0; i < maxIterations; i++) {
+  if (randomStart) {
+    // Top: pick 2 random pages from the top range
+    const topA = 1 + Math.floor(Math.random() * TOP_RANGE_END);
+    const topB = 1 + Math.floor(Math.random() * TOP_RANGE_END);
+    pagesToScan.push(topA, topB);
+
+    // Variety: 3 consecutive-ish pages from a random offset in the deeper range
+    const varietyStart =
+      TOP_RANGE_END + Math.floor(Math.random() * (VARIETY_RANGE_END - TOP_RANGE_END - 3));
+    pagesToScan.push(varietyStart, varietyStart + 1, varietyStart + 2);
+  } else {
+    pagesToScan.push(startPage);
+  }
+
+  for (const page of pagesToScan) {
+    if (collected.length >= target) break;
+
     let batch: Array<{ character: AniListCharacter; anime: string | null }>;
     try {
-      batch = await fetchPage(currentPage);
+      batch = await fetchPage(page);
     } catch (err) {
-      if (collected.length === 0) throw err;
-      break;
-    }
-
-    if (batch.length === 0) {
-      exhausted = true;
-      break;
+      if (collected.length === 0 && pagesToScan.indexOf(page) === 0) throw err;
+      continue;
     }
 
     for (const row of batch) {
@@ -126,22 +148,17 @@ async function fetchAnilistCharacters(
     }
 
     onProgress?.(Math.min(collected.length, target), target);
-    if (collected.length >= target) break;
-
-    // Jump ahead by a random stride (unless we're near the end).
-    const stride = STRIDE_MIN + Math.floor(Math.random() * (STRIDE_MAX - STRIDE_MIN + 1));
-    currentPage = Math.min(currentPage + stride, MAX_PAGE);
-
     await new Promise((r) => setTimeout(r, SETTINGS.ANILIST_REQUEST_DELAY_MS));
   }
 
-  // Shuffle the whole batch so it feels random
-  for (let i = collected.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [collected[i], collected[j]] = [collected[j], collected[i]];
-  }
+  // Shuffle so pages aren't laid out in order
+  shuffleInPlace(collected);
 
-  return { characters: collected, nextPage: currentPage, exhausted };
+  return {
+    characters: collected,
+    nextPage: 1,
+    exhausted: collected.length === 0,
+  };
 }
 
 function filterAnilist(deck: Character[], filter: DeckFilter): Character[] {
