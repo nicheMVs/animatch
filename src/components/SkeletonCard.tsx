@@ -7,7 +7,7 @@ interface SkeletonCardProps {
 
 export default function SkeletonCard({ label = 'Loading' }: SkeletonCardProps) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6">
+    <div className="flex h-full w-full flex-col items-center justify-center px-6">
       <motion.div
         animate={{ rotate: 360 }}
         transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
