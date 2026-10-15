@@ -41,11 +41,19 @@ function extractGender(tags: string): 'female' | 'male' | null {
   return null;
 }
 
+/** Route remote image URLs through our proxy so hotlink protection doesn't block them. */
+function proxyImage(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl) return null;
+  return `/api/gelbooru-image?url=${encodeURIComponent(rawUrl)}`;
+}
+
 function toCharacter(post: GelbooruPost): Character {
+  // Prefer preview_url (smaller/faster), then sample_url, then file_url
+  const image = post.preview_url || post.sample_url || post.file_url;
   return {
     id: post.id,
     name: extractCharacterName(post.tags),
-    imageUrl: post.sample_url || post.file_url || null,
+    imageUrl: proxyImage(image),
     gender: extractGender(post.tags),
     favorites: post.score ?? 0,
   };
@@ -67,14 +75,9 @@ async function fetchGelbooruCharacters(
   const seen = new Set<number>(excludeIds);
   const pagesToScan = Math.ceil(target / POSTS_PER_PAGE) + 5;
 
-  // Random starting page for freshness; capped at 500 so we don't land
-  // on pages that are empty or heavily filtered.
   let currentPage = randomStart ? Math.floor(Math.random() * 500) : startPage;
   let exhausted = false;
 
-  // solo = single character, rating:explicit = NSFW only.
-  // 1girl/1boy determines gender; we query 1girl by default and
-  // filter out mismatches client-side.
   const queryTags = 'solo rating:explicit';
 
   for (let i = 0; i < pagesToScan; i++) {
