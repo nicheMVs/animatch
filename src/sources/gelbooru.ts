@@ -1,5 +1,6 @@
 import type { Character, DeckFilter } from '../types/character';
 import type { SourceDefinition, FetchResult } from './types';
+import { buildTagString, getSourceSettings } from '../services/devSettings';
 
 interface DanbooruPost {
   id: number;
@@ -15,7 +16,6 @@ interface DanbooruPost {
 const POSTS_PER_PAGE = 100;
 
 function extractCharacterName(post: DanbooruPost): string {
-  // Danbooru explicitly provides character tags
   const chars = post.tag_string_character.trim();
   if (!chars) return 'Unknown';
   const first = chars.split(' ')[0];
@@ -40,7 +40,6 @@ function proxyImage(rawUrl: string | null | undefined): string | null {
 }
 
 function toCharacter(post: DanbooruPost): Character {
-  // Prefer large_file_url for a good balance of quality and speed
   const image = post.large_file_url || post.preview_file_url || post.file_url;
   return {
     id: post.id,
@@ -62,12 +61,11 @@ async function fetchDanbooruCharacters(
   const seen = new Set<number>(excludeIds);
   const pagesToScan = Math.ceil(target / POSTS_PER_PAGE) + 5;
 
-  // Danbooru pagination uses page numbers, not offsets. Random start is capped
-  // to avoid deep pages where many posts may be hidden/deleted.
+  const settings = getSourceSettings('danbooru');
+  const queryTags = buildTagString(settings);
+
   let currentPage = randomStart ? Math.floor(Math.random() * 100) + 1 : startPage;
   let exhausted = false;
-
-  const queryTags = 'solo rating:explicit';
 
   for (let i = 0; i < pagesToScan; i++) {
     let batch: DanbooruPost[] = [];
@@ -84,7 +82,10 @@ async function fetchDanbooruCharacters(
     }
 
     if (batch.length === 0) {
-      if (currentPage > 1 && randomStart) { currentPage = 1; continue; }
+      if (currentPage > 1 && randomStart) {
+        currentPage = 1;
+        continue;
+      }
       exhausted = true;
       break;
     }
@@ -120,7 +121,7 @@ function filterDanbooru(deck: Character[], filter: DeckFilter): Character[] {
 }
 
 export const danbooruSource: SourceDefinition = {
-  id: 'danbooru',
+  id: 'gelbooru',
   name: 'BooruMatch',
   subtitle: 'Booru characters from Danbooru',
   filters: [

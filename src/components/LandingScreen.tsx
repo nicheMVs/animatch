@@ -1,8 +1,10 @@
+import { Suspense, lazy, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Heart, Sparkles } from 'lucide-react';
 
 interface LandingScreenProps {
   onSelect: (source: 'anilist' | 'gelbooru') => void;
+  onDevSave: () => void;
 }
 
 const SOURCES = [
@@ -12,19 +14,36 @@ const SOURCES = [
     subtitle: 'Anime characters from AniList',
     tagline: 'Kiss · Marry · Kill',
     icon: Heart,
-    enabled: true,
   },
   {
     id: 'gelbooru' as const,
     title: 'BooruMatch',
-    subtitle: 'Booru characters from Gelbooru',
+    subtitle: 'Booru characters from Danbooru',
     tagline: 'Kiss · Marry · Kill',
     icon: Sparkles,
-    enabled: true,
   },
 ];
 
-export default function LandingScreen({ onSelect }: LandingScreenProps) {
+// Dev-only lazy import — Vite replaces import.meta.env.DEV with false in prod,
+// so this whole branch is tree-shaken out of the production build.
+const DevPanel = import.meta.env.DEV
+  ? lazy(() => import('./DevPanel'))
+  : null;
+
+export default function LandingScreen({ onSelect, onDevSave }: LandingScreenProps) {
+  const [devOpen, setDevOpen] = useState(false);
+  const tapTimes = useRef<number[]>([]);
+
+  const handleTitleTap = () => {
+    if (!import.meta.env.DEV) return;
+    const now = Date.now();
+    tapTimes.current = [...tapTimes.current, now].filter((t) => now - t < 2000);
+    if (tapTimes.current.length >= 5) {
+      tapTimes.current = [];
+      setDevOpen(true);
+    }
+  };
+
   return (
     <div className="relative flex h-full flex-col items-center justify-center px-6">
       <motion.div
@@ -37,7 +56,12 @@ export default function LandingScreen({ onSelect }: LandingScreenProps) {
           <Heart size={20} strokeWidth={1.5} />
           <Sparkles size={20} strokeWidth={1.5} />
         </div>
-        <h1 className="font-display text-6xl leading-none tracking-tight text-white">Match</h1>
+        <h1
+          onClick={handleTitleTap}
+          className="cursor-default select-none font-display text-6xl leading-none tracking-tight text-white"
+        >
+          Match
+        </h1>
         <p className="mt-3 text-xs font-light uppercase tracking-[0.35em] text-white/40">
           Choose your deck
         </p>
@@ -76,6 +100,17 @@ export default function LandingScreen({ onSelect }: LandingScreenProps) {
           );
         })}
       </div>
+
+      {devOpen && DevPanel && (
+        <Suspense fallback={null}>
+          <DevPanel
+            onClose={() => setDevOpen(false)}
+            onSaved={() => {
+              onDevSave();
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

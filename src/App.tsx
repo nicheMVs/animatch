@@ -6,7 +6,7 @@ import FilterScreen from './components/FilterScreen';
 import GameScreen from './components/GameScreen';
 import HistoryScreen from './components/HistoryScreen';
 import { getSource, type SourceId } from './sources';
-import { getCachedDeck, setCachedDeck } from './services/storage';
+import { clearAll, getCachedDeck, setCachedDeck } from './services/storage';
 import { SETTINGS } from './config/settings';
 import type { Character, DeckFilter } from './types/character';
 
@@ -103,6 +103,16 @@ export default function App() {
     },
     [loadMore]
   );
+
+  const handleDevSave = useCallback(() => {
+    // Clear the current source's cache and refetch with new tags
+    clearAll(sourceId);
+    setDeck([]);
+    setNextPage(1);
+    setSeenIds(new Set());
+    setExhausted(false);
+    void loadMore('initial', sourceId);
+  }, [sourceId, loadMore]);
 
   const filteredDeck = useMemo(() => source.filter(deck, filter), [source, deck, filter]);
 
@@ -207,6 +217,7 @@ export default function App() {
           {screen === 'landing' && (
             <LandingScreen
               onSelect={(src) => enterSource(src as SourceId)}
+              onDevSave={handleDevSave}
             />
           )}
           {screen === 'filter' && (
