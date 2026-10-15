@@ -22,7 +22,7 @@ export interface ActionConfig {
 export const ACTIONS: ActionConfig[] = [
   {
     id: 'action1',
-    label: 'Kiss',
+    label: 'Fuck',
     icon: Heart,
     color: '#ff5a7a',
     swipeDirection: 'right',
@@ -50,5 +50,5 @@ export const getActionById = (id: string): ActionConfig | undefined =>
 export const getActionByDirection = (dir: SwipeDirection): ActionConfig | undefined =>
   ACTIONS.find((a) => a.swipeDirection === dir);
 
-// Buttons are shown in the order defined above: Kiss, Marry, Kill (left → right).
+// Buttons are shown in the order defined above: Fuck, Marry, Kill (left → right).
 export const ACTIONS_IN_BUTTON_ORDER: ActionConfig[] = [...ACTIONS];

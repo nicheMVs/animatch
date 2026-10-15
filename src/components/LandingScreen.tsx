@@ -19,7 +19,7 @@ export default function LandingScreen({ onEnter }: LandingScreenProps) {
         </div>
         <h1 className="font-display text-6xl leading-none tracking-tight text-white">AniMatch</h1>
         <p className="mt-3 text-xs font-light uppercase tracking-[0.35em] text-white/40">
-          Kiss · Marry · Kill
+          Fuck · Marry · Kill
         </p>
       </motion.div>
 
