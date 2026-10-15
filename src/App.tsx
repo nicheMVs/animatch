@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Loader2, RefreshCw, Sparkles } from 'lucide-react';
+import LandingScreen from './components/LandingScreen';
 import FilterScreen from './components/FilterScreen';
 import GameScreen from './components/GameScreen';
 import HistoryScreen from './components/HistoryScreen';
@@ -8,7 +9,7 @@ import { fetchCharacters, filterDeck } from './services/jikan';
 import { getCachedDeck, setCachedDeck } from './services/storage';
 import type { Character, DeckFilter } from './types/character';
 
-type Screen = 'filter' | 'game' | 'history';
+type Screen = 'landing' | 'filter' | 'game' | 'history';
 type DeckStatus = 'loading' | 'ready' | 'error';
 type LoadingMode = 'initial' | 'refill';
 
@@ -19,7 +20,7 @@ const FILTER_LABELS: Record<DeckFilter, string> = {
 };
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('filter');
+  const [screen, setScreen] = useState<Screen>('landing');
   const [historyReturn, setHistoryReturn] = useState<Screen>('filter');
   const [filter, setFilter] = useState<DeckFilter>('both');
 
@@ -32,20 +33,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [exhausted, setExhausted] = useState(false);
   const fetching = useRef(false);
-
-  // Hydrate from cache on first mount
-  useEffect(() => {
-    const cached = getCachedDeck();
-    if (cached && cached.characters.length > 0) {
-      setDeck(cached.characters);
-      setNextPage(cached.nextPage);
-      setSeenIds(new Set(cached.seenIds));
-      setStatus('ready');
-    } else {
-      void loadMore('initial');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const loadMore = useCallback(
     async (mode: LoadingMode) => {
@@ -63,7 +50,6 @@ export default function App() {
           startPage,
           (loaded, total) => setProgress({ loaded, total }),
           undefined,
-          // Random start only for the very first fetch of a fresh session
           mode === 'initial'
         );
         if (result.characters.length === 0) {
@@ -94,6 +80,20 @@ export default function App() {
     },
     [deck, nextPage, seenIds]
   );
+
+  // Hydrate from cache when entering the game (AniMatch only for now)
+  const enterAniMatch = useCallback(() => {
+    const cached = getCachedDeck();
+    if (cached && cached.characters.length > 0) {
+      setDeck(cached.characters);
+      setNextPage(cached.nextPage);
+      setSeenIds(new Set(cached.seenIds));
+      setStatus('ready');
+    } else {
+      void loadMore('initial');
+    }
+    setScreen('filter');
+  }, [loadMore]);
 
   const filteredDeck = useMemo(() => filterDeck(deck, filter), [deck, filter]);
 
@@ -196,6 +196,14 @@ export default function App() {
           exit={{ opacity: 0, y: -12 }}
           transition={{ duration: 0.2 }}
         >
+          {screen === 'landing' && (
+            <LandingScreen
+              onSelect={(src) => {
+                if (src === 'anilist') enterAniMatch();
+                // gelbooru not enabled yet
+              }}
+            />
+          )}
           {screen === 'filter' && (
             <FilterScreen
               onSelect={(f) => {
@@ -203,6 +211,7 @@ export default function App() {
                 setScreen('game');
               }}
               onHistory={() => openHistory('filter')}
+              onBack={() => setScreen('landing')}
               loadingHint={
                 status === 'loading' && progress.total > 0
                   ? `Fetching characters… ${progress.loaded}/${progress.total}`

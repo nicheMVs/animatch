@@ -1,11 +1,12 @@
 import { motion } from 'framer-motion';
-import { History, Heart, Sword, Sparkles } from 'lucide-react';
+import { ArrowLeft, History, Heart, Sword, Sparkles } from 'lucide-react';
 import { ACTIONS } from '../config/actions';
 import type { DeckFilter } from '../types/character';
 
 interface FilterScreenProps {
   onSelect: (filter: DeckFilter) => void;
   onHistory: () => void;
+  onBack: () => void;
   loadingHint?: string | null;
 }
 
@@ -15,11 +16,17 @@ const OPTIONS: { filter: DeckFilter; label: string; subtitle: string; icon: type
   { filter: 'both', label: 'Everyone', subtitle: 'No filter', icon: Sparkles },
 ];
 
-export default function FilterScreen({ onSelect, onHistory, loadingHint }: FilterScreenProps) {
+export default function FilterScreen({ onSelect, onHistory, onBack, loadingHint }: FilterScreenProps) {
   return (
     <div className="relative flex h-full flex-col items-center justify-center px-6">
       <header className="absolute top-4 left-0 right-0 flex items-center justify-between px-4">
-        <div />
+        <button
+          onClick={onBack}
+          className="rounded-full p-2 text-white/50 transition hover:bg-white/5 hover:text-white"
+          aria-label="Back to source selection"
+        >
+          <ArrowLeft size={20} />
+        </button>
         <button
           onClick={onHistory}
           className="rounded-full p-2 text-white/50 transition hover:bg-white/5 hover:text-white"
