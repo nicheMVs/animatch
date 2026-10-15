@@ -45,10 +45,10 @@ interface AniListResponse {
 
 const PER_PAGE = 25;
 /**
- * Fetch from the top ~2000 popular anime. This keeps popular characters
- * front and centre while giving more variety than a smaller range.
+ * Fetch from the top ~3,750 popular anime (150 pages × 25).
+ * Balanced enough to have variety while still being recognizable.
  */
-const MAX_START_PAGE = 80;
+const MAX_START_PAGE = 150;
 
 async function fetchPage(
   page: number
@@ -81,7 +81,6 @@ function toCharacter(row: { character: AniListCharacter; anime: string | null })
     anime: row.anime,
     imageUrl: a.image.large || a.image.medium || null,
     gender: a.gender,
-    favorites: a.favourites,
   };
 }
 
@@ -133,7 +132,7 @@ async function fetchAnilistCharacters(
     await new Promise((r) => setTimeout(r, SETTINGS.ANILIST_REQUEST_DELAY_MS));
   }
 
-  // Shuffle the entire collected batch so we don't see them in anime order
+  // Shuffle the whole batch so the anime-based ordering from AniList is broken up.
   for (let i = collected.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [collected[i], collected[j]] = [collected[j], collected[i]];
