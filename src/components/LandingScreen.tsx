@@ -8,8 +8,8 @@ interface LandingScreenProps {
 }
 
 const OPTIONS: { filter: DeckFilter; label: string; subtitle: string; icon: typeof Heart }[] = [
-  { filter: 'waifus', label: 'Waifus', subtitle: 'She / her', icon: Heart },
-  { filter: 'husbandos', label: 'Husbandos', subtitle: 'He / him', icon: Sword },
+  { filter: 'waifus', label: 'Waifus', icon: Heart },
+  { filter: 'husbandos', label: 'Husbandos', icon: Sword },
 ];
 
 export default function LandingScreen({ onSelect }: LandingScreenProps) {
