@@ -5,23 +5,19 @@ import LandingScreen from './components/LandingScreen';
 import FilterScreen from './components/FilterScreen';
 import GameScreen from './components/GameScreen';
 import HistoryScreen from './components/HistoryScreen';
-import { fetchCharacters, filterDeck } from './services/jikan';
+import { getSource, type SourceId } from './sources';
 import { getCachedDeck, setCachedDeck } from './services/storage';
+import { SETTINGS } from './config/settings';
 import type { Character, DeckFilter } from './types/character';
 
 type Screen = 'landing' | 'filter' | 'game' | 'history';
 type DeckStatus = 'loading' | 'ready' | 'error';
 type LoadingMode = 'initial' | 'refill';
 
-const FILTER_LABELS: Record<DeckFilter, string> = {
-  waifus: 'Waifus',
-  husbandos: 'Husbandos',
-  both: 'Everyone',
-};
-
 export default function App() {
   const [screen, setScreen] = useState<Screen>('landing');
   const [historyReturn, setHistoryReturn] = useState<Screen>('filter');
+  const [sourceId, setSourceId] = useState<SourceId>('anilist');
   const [filter, setFilter] = useState<DeckFilter>('both');
 
   const [deck, setDeck] = useState<Character[]>([]);
@@ -34,10 +30,13 @@ export default function App() {
   const [exhausted, setExhausted] = useState(false);
   const fetching = useRef(false);
 
+  const source = getSource(sourceId);
+
   const loadMore = useCallback(
-    async (mode: LoadingMode) => {
+    async (mode: LoadingMode, activeSourceId: SourceId = sourceId) => {
       if (fetching.current) return;
       fetching.current = true;
+      const activeSource = getSource(activeSourceId);
       setLoadingMode(mode);
       setStatus('loading');
       setError(null);
@@ -45,11 +44,11 @@ export default function App() {
       try {
         const exclude = mode === 'initial' ? new Set<number>() : new Set(seenIds);
         const startPage = mode === 'initial' ? 1 : nextPage;
-        const result = await fetchCharacters(
+        const result = await activeSource.fetch(
           exclude,
           startPage,
           (loaded, total) => setProgress({ loaded, total }),
-          undefined,
+          SETTINGS.DECK_SIZE,
           mode === 'initial'
         );
         if (result.characters.length === 0) {
@@ -64,7 +63,7 @@ export default function App() {
         setDeck(newDeck);
         setSeenIds(newSeen);
         setNextPage(result.nextPage);
-        setCachedDeck({
+        setCachedDeck(activeSourceId, {
           characters: newDeck,
           nextPage: result.nextPage,
           seenIds: [...newSeen],
@@ -78,23 +77,34 @@ export default function App() {
         fetching.current = false;
       }
     },
-    [deck, nextPage, seenIds]
+    [deck, nextPage, seenIds, sourceId]
   );
 
-  const enterAniMatch = useCallback(() => {
-    const cached = getCachedDeck();
-    if (cached && cached.characters.length > 0) {
-      setDeck(cached.characters);
-      setNextPage(cached.nextPage);
-      setSeenIds(new Set(cached.seenIds));
-      setStatus('ready');
-    } else {
-      void loadMore('initial');
-    }
-    setScreen('filter');
-  }, [loadMore]);
+  const enterSource = useCallback(
+    (id: SourceId) => {
+      setSourceId(id);
+      setFilter('both');
+      setExhausted(false);
+      setError(null);
 
-  const filteredDeck = useMemo(() => filterDeck(deck, filter), [deck, filter]);
+      const cached = getCachedDeck(id);
+      if (cached && cached.characters.length > 0) {
+        setDeck(cached.characters);
+        setNextPage(cached.nextPage);
+        setSeenIds(new Set(cached.seenIds));
+        setStatus('ready');
+      } else {
+        setDeck([]);
+        setNextPage(1);
+        setSeenIds(new Set());
+        void loadMore('initial', id);
+      }
+      setScreen('filter');
+    },
+    [loadMore]
+  );
+
+  const filteredDeck = useMemo(() => source.filter(deck, filter), [source, deck, filter]);
 
   const openHistory = (from: Screen) => {
     setHistoryReturn(from);
@@ -154,9 +164,6 @@ export default function App() {
           <p className="text-4xl">◌</p>
           <p className="font-display text-2xl text-white">Couldn't load characters</p>
           <p className="max-w-xs text-xs font-light text-white/40">{error}</p>
-          <p className="text-xs font-light text-white/30">
-            If this keeps happening, raise ANILIST_REQUEST_DELAY_MS in src/config/settings.ts.
-          </p>
           <button
             onClick={() => loadMore(deck.length === 0 ? 'initial' : 'refill')}
             className="mt-2 flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.03] px-5 py-2 text-sm font-medium text-white transition hover:border-white/30 hover:bg-white/[0.07]"
@@ -172,10 +179,12 @@ export default function App() {
         </div>
       );
     }
+    const filterLabel = source.filters.find((f) => f.id === filter)?.label ?? 'Everyone';
     return (
       <GameScreen
         characters={filteredDeck}
-        filterLabel={FILTER_LABELS[filter]}
+        filterLabel={filterLabel}
+        sourceId={sourceId}
         onBack={() => setScreen('filter')}
         onHistory={() => openHistory('game')}
         onExhausted={handleDeckExhausted}
@@ -198,12 +207,15 @@ export default function App() {
           {screen === 'landing' && (
             <LandingScreen
               onSelect={(src) => {
-                if (src === 'anilist') enterAniMatch();
+                if (src === 'anilist') enterSource('anilist');
+                // gelbooru still disabled
               }}
             />
           )}
           {screen === 'filter' && (
             <FilterScreen
+              sourceName={source.name}
+              sourceFilters={source.filters}
               onSelect={(f) => {
                 setFilter(f);
                 setScreen('game');
@@ -218,7 +230,9 @@ export default function App() {
             />
           )}
           {screen === 'game' && renderGame()}
-          {screen === 'history' && <HistoryScreen onBack={() => setScreen(historyReturn)} />}
+          {screen === 'history' && (
+            <HistoryScreen sourceId={sourceId} onBack={() => setScreen(historyReturn)} />
+          )}
         </motion.div>
       </AnimatePresence>
     </div>

@@ -1,5 +1,6 @@
 import { SETTINGS } from '../config/settings';
 import type { Character, DeckFilter } from '../types/character';
+import type { SourceDefinition } from './types';
 
 const QUERY = `
   query ($page: Int, $perPage: Int) {
@@ -43,9 +44,6 @@ interface AniListResponse {
 }
 
 const PER_PAGE = 25;
-
-// How many total pages AniList has for popular anime. High enough to give us
-// variety, low enough that random starts don't hit empty pages.
 const MAX_START_PAGE = 60;
 
 async function fetchPage(page: number): Promise<AniListCharacter[]> {
@@ -80,20 +78,13 @@ function toCharacter(a: AniListCharacter): Character {
   };
 }
 
-export interface FetchResult {
-  characters: Character[];
-  nextPage: number;
-  exhausted: boolean;
-}
-
-export async function fetchCharacters(
+async function fetchAnilistCharacters(
   excludeIds: Set<number> = new Set(),
   startPage = 1,
   onProgress?: (loaded: number, total: number) => void,
   target: number = SETTINGS.DECK_SIZE,
-  /** If true, pick a random page offset to give a fresh mix. */
   randomStart = false
-): Promise<FetchResult> {
+) {
   const collected: Character[] = [];
   const seen = new Set<number>(excludeIds);
   const pagesToScan = Math.ceil(target / PER_PAGE) + 10;
@@ -110,7 +101,6 @@ export async function fetchCharacters(
     }
 
     if (batch.length === 0) {
-      // Wrap around to page 1 if we ran off the end
       if (currentPage > 1 && randomStart) {
         currentPage = 1;
         continue;
@@ -133,7 +123,6 @@ export async function fetchCharacters(
     await new Promise((r) => setTimeout(r, SETTINGS.ANILIST_REQUEST_DELAY_MS));
   }
 
-  // Shuffle the collected characters so they arrive in random order
   for (let i = collected.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [collected[i], collected[j]] = [collected[j], collected[i]];
@@ -142,17 +131,21 @@ export async function fetchCharacters(
   return { characters: collected, nextPage: currentPage, exhausted };
 }
 
-export function filterDeck(deck: Character[], filter: DeckFilter): Character[] {
+function filterAnilist(deck: Character[], filter: DeckFilter): Character[] {
   if (filter === 'both') return deck;
   const target = filter === 'waifus' ? 'female' : 'male';
   return deck.filter((c) => (c.gender || '').toLowerCase() === target);
 }
 
-export function shuffle<T>(arr: T[]): T[] {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
+export const anilistSource: SourceDefinition = {
+  id: 'anilist',
+  name: 'AniMatch',
+  subtitle: 'Anime characters from AniList',
+  filters: [
+    { id: 'waifus', label: 'Waifus', subtitle: 'She / her' },
+    { id: 'husbandos', label: 'Husbandos', subtitle: 'He / him' },
+    { id: 'both', label: 'Everyone', subtitle: 'No filter' },
+  ],
+  fetch: fetchAnilistCharacters,
+  filter: filterAnilist,
+};

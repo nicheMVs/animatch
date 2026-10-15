@@ -2,6 +2,10 @@ import { SETTINGS } from '../config/settings';
 import type { Character } from '../types/character';
 import type { Choice } from '../types/choice';
 
+function scopedKey(base: string, sourceId: string): string {
+  return `${base}__${sourceId}`;
+}
+
 function readJson<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -22,20 +26,20 @@ function writeJson(key: string, value: unknown): boolean {
 
 // ── History ──────────────────────────────────────────────
 
-export function getHistory(): Choice[] {
-  const data = readJson<Choice[]>(SETTINGS.STORAGE_KEY, []);
+export function getHistory(sourceId: string): Choice[] {
+  const data = readJson<Choice[]>(scopedKey(SETTINGS.STORAGE_KEY, sourceId), []);
   return Array.isArray(data) ? data : [];
 }
 
-export function addChoice(choice: Choice): void {
-  const history = getHistory();
+export function addChoice(sourceId: string, choice: Choice): void {
+  const history = getHistory(sourceId);
   history.push(choice);
-  writeJson(SETTINGS.STORAGE_KEY, history);
+  writeJson(scopedKey(SETTINGS.STORAGE_KEY, sourceId), history);
 }
 
-export function clearHistory(): void {
+export function clearHistory(sourceId: string): void {
   try {
-    localStorage.removeItem(SETTINGS.STORAGE_KEY);
+    localStorage.removeItem(scopedKey(SETTINGS.STORAGE_KEY, sourceId));
   } catch {
     /* ignore */
   }
@@ -49,7 +53,6 @@ interface DeckCache {
   characters: Character[];
   nextPage: number;
   seenIds: number[];
-  /** The frozen shuffled order. Same array on every load. */
   order: number[];
 }
 
@@ -60,8 +63,8 @@ export interface DeckSnapshot {
   order: number[];
 }
 
-export function getCachedDeck(): DeckSnapshot | null {
-  const cache = readJson<DeckCache | null>(SETTINGS.DECK_CACHE_KEY, null);
+export function getCachedDeck(sourceId: string): DeckSnapshot | null {
+  const cache = readJson<DeckCache | null>(scopedKey(SETTINGS.DECK_CACHE_KEY, sourceId), null);
   if (!cache || !Array.isArray(cache.characters) || cache.characters.length === 0) return null;
   if (cache.deckSize !== SETTINGS.DECK_SIZE) return null;
   return {
@@ -72,7 +75,7 @@ export function getCachedDeck(): DeckSnapshot | null {
   };
 }
 
-export function setCachedDeck(snapshot: DeckSnapshot): void {
+export function setCachedDeck(sourceId: string, snapshot: DeckSnapshot): void {
   const cache: DeckCache = {
     savedAt: Date.now(),
     deckSize: SETTINGS.DECK_SIZE,
@@ -81,12 +84,12 @@ export function setCachedDeck(snapshot: DeckSnapshot): void {
     seenIds: snapshot.seenIds,
     order: snapshot.order,
   };
-  writeJson(SETTINGS.DECK_CACHE_KEY, cache);
+  writeJson(scopedKey(SETTINGS.DECK_CACHE_KEY, sourceId), cache);
 }
 
-export function clearCachedDeck(): void {
+export function clearCachedDeck(sourceId: string): void {
   try {
-    localStorage.removeItem(SETTINGS.DECK_CACHE_KEY);
+    localStorage.removeItem(scopedKey(SETTINGS.DECK_CACHE_KEY, sourceId));
   } catch {
     /* ignore */
   }
@@ -94,27 +97,27 @@ export function clearCachedDeck(): void {
 
 // ── Deck progress (current card index) ───────────────────
 
-export function getSavedIndex(): number {
-  const value = readJson<number>(SETTINGS.PROGRESS_KEY, 0);
+export function getSavedIndex(sourceId: string): number {
+  const value = readJson<number>(scopedKey(SETTINGS.PROGRESS_KEY, sourceId), 0);
   return typeof value === 'number' && value >= 0 ? value : 0;
 }
 
-export function setSavedIndex(index: number): void {
-  writeJson(SETTINGS.PROGRESS_KEY, index);
+export function setSavedIndex(sourceId: string, index: number): void {
+  writeJson(scopedKey(SETTINGS.PROGRESS_KEY, sourceId), index);
 }
 
-export function clearSavedIndex(): void {
+export function clearSavedIndex(sourceId: string): void {
   try {
-    localStorage.removeItem(SETTINGS.PROGRESS_KEY);
+    localStorage.removeItem(scopedKey(SETTINGS.PROGRESS_KEY, sourceId));
   } catch {
     /* ignore */
   }
 }
 
-// ── Full reset ───────────────────────────────────────────
+// ── Full reset (one source) ──────────────────────────────
 
-export function clearAll(): void {
-  clearHistory();
-  clearCachedDeck();
-  clearSavedIndex();
+export function clearAll(sourceId: string): void {
+  clearHistory(sourceId);
+  clearCachedDeck(sourceId);
+  clearSavedIndex(sourceId);
 }

@@ -7,6 +7,7 @@ import type { Choice } from '../types/choice';
 import ActionFilterTabs from './ActionFilterTabs';
 
 interface HistoryScreenProps {
+  sourceId: string;
   onBack: () => void;
 }
 
@@ -30,8 +31,8 @@ function Thumb({ choice }: { choice: Choice }) {
   );
 }
 
-export default function HistoryScreen({ onBack }: HistoryScreenProps) {
-  const [history] = useState<Choice[]>(() => getHistory().slice().reverse());
+export default function HistoryScreen({ sourceId, onBack }: HistoryScreenProps) {
+  const [history] = useState<Choice[]>(() => getHistory(sourceId).slice().reverse());
   const [activeFilter, setActiveFilter] = useState<string>('all');
 
   const counts = useMemo(() => {
@@ -47,7 +48,7 @@ export default function HistoryScreen({ onBack }: HistoryScreenProps) {
 
   const handleClear = () => {
     if (window.confirm("Clear history and reset the deck? You'll get a fresh shuffle next time.")) {
-      clearAll();
+      clearAll(sourceId);
       window.location.reload();
     }
   };

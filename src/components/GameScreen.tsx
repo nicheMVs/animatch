@@ -10,6 +10,7 @@ import CharacterCard, { type CharacterCardHandle } from './CharacterCard';
 interface GameScreenProps {
   characters: Character[];
   filterLabel: string;
+  sourceId: string;
   onBack: () => void;
   onHistory: () => void;
   onExhausted: () => void;
@@ -26,36 +27,31 @@ const KEY_TO_DIRECTION: Record<string, SwipeDirection> = {
 export default function GameScreen({
   characters,
   filterLabel,
+  sourceId,
   onBack,
   onHistory,
   onExhausted,
   exhausted,
 }: GameScreenProps) {
-  // Character lookup by id
   const charMap = useMemo(() => {
     const m = new Map<number, Character>();
     for (const c of characters) m.set(c.id, c);
     return m;
   }, [characters]);
 
-  // Order is derived from the characters prop. Because App already shuffles
-  // the deck once at fetch time, the order here is stable and does NOT change
-  // when you re-enter the game.
   const orderIds = useMemo(() => characters.map((c) => c.id), [characters]);
 
   const [index, setIndex] = useState<number>(() => {
-    const saved = getSavedIndex();
+    const saved = getSavedIndex(sourceId);
     return saved < orderIds.length ? saved : 0;
   });
   const cardRef = useRef<CharacterCardHandle>(null);
   const alreadyTriggered = useRef(false);
 
-  // Persist index
   useEffect(() => {
-    setSavedIndex(index);
-  }, [index]);
+    setSavedIndex(sourceId, index);
+  }, [sourceId, index]);
 
-  // Clamp on length change
   useEffect(() => {
     if (index >= orderIds.length && orderIds.length > 0) {
       setIndex(Math.max(0, orderIds.length - 1));
@@ -66,7 +62,6 @@ export default function GameScreen({
   const next = charMap.get(orderIds[index + 1]);
   const finished = orderIds.length > 0 && index >= orderIds.length;
 
-  // Preload
   useEffect(() => {
     orderIds.slice(index + 1, index + 4).forEach((id) => {
       const c = charMap.get(id);
@@ -77,7 +72,6 @@ export default function GameScreen({
     });
   }, [orderIds, index, charMap]);
 
-  // Trigger refill on exhaustion
   useEffect(() => {
     if (finished && !exhausted && !alreadyTriggered.current) {
       alreadyTriggered.current = true;
@@ -88,7 +82,7 @@ export default function GameScreen({
   const handleAction = useCallback(
     (actionId: string) => {
       if (!current) return;
-      addChoice({
+      addChoice(sourceId, {
         characterId: current.id,
         name: current.name,
         imageUrl: current.imageUrl,
@@ -97,12 +91,11 @@ export default function GameScreen({
       });
       setIndex((i) => i + 1);
     },
-    [current]
+    [current, sourceId]
   );
 
   const handleSkip = useCallback(() => setIndex((i) => i + 1), []);
 
-  // Keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!cardRef.current) return;
@@ -133,7 +126,7 @@ export default function GameScreen({
           <ArrowLeft size={20} />
         </button>
         <div className="text-center">
-          <h1 className="font-display text-2xl leading-none tracking-tight text-white">AniMatch</h1>
+          <h1 className="font-display text-2xl leading-none tracking-tight text-white">Match</h1>
           <p className="mt-1 text-[10px] font-light uppercase tracking-[0.25em] text-white/40">
             {filterLabel} · {Math.min(index + 1, orderIds.length)}/{orderIds.length}
           </p>

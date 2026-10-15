@@ -2,21 +2,31 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, History, Heart, Sword, Sparkles } from 'lucide-react';
 import { ACTIONS } from '../config/actions';
 import type { DeckFilter } from '../types/character';
+import type { FilterOption } from '../sources/types';
 
 interface FilterScreenProps {
+  sourceName: string;
+  sourceFilters: FilterOption[];
   onSelect: (filter: DeckFilter) => void;
   onHistory: () => void;
   onBack: () => void;
   loadingHint?: string | null;
 }
 
-const OPTIONS: { filter: DeckFilter; label: string; subtitle: string; icon: typeof Heart }[] = [
-  { filter: 'waifus', label: 'Waifus', subtitle: 'She / her', icon: Heart },
-  { filter: 'husbandos', label: 'Husbandos', subtitle: 'He / him', icon: Sword },
-  { filter: 'both', label: 'Everyone', subtitle: 'No filter', icon: Sparkles },
-];
+const ICONS: Record<string, typeof Heart> = {
+  waifus: Heart,
+  husbandos: Sword,
+  both: Sparkles,
+};
 
-export default function FilterScreen({ onSelect, onHistory, onBack, loadingHint }: FilterScreenProps) {
+export default function FilterScreen({
+  sourceName,
+  sourceFilters,
+  onSelect,
+  onHistory,
+  onBack,
+  loadingHint,
+}: FilterScreenProps) {
   return (
     <div className="relative flex h-full flex-col items-center justify-center px-6">
       <header className="absolute top-4 left-0 right-0 flex items-center justify-between px-4">
@@ -48,24 +58,24 @@ export default function FilterScreen({ onSelect, onHistory, onBack, loadingHint 
             return <Icon key={a.id} size={20} strokeWidth={1.5} />;
           })}
         </div>
-        <h1 className="font-display text-6xl leading-none tracking-tight text-white">AniMatch</h1>
+        <h1 className="font-display text-6xl leading-none tracking-tight text-white">{sourceName}</h1>
         <p className="mt-3 text-xs font-light uppercase tracking-[0.35em] text-white/40">
           Kiss · Marry · Kill
         </p>
       </motion.div>
 
       <div className="w-full max-w-sm space-y-3">
-        {OPTIONS.map((opt, i) => {
-          const Icon = opt.icon;
+        {sourceFilters.map((opt, i) => {
+          const Icon = ICONS[opt.id] ?? Sparkles;
           return (
             <motion.button
-              key={opt.filter}
+              key={opt.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.1 + i * 0.06 }}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => onSelect(opt.filter)}
+              onClick={() => onSelect(opt.id)}
               className="group flex w-full items-center gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.02] px-5 py-4 text-left backdrop-blur-sm transition-colors hover:border-white/[0.18] hover:bg-white/[0.05]"
             >
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/60 transition-colors group-hover:border-white/25 group-hover:text-white">
