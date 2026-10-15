@@ -41,19 +41,17 @@ function extractGender(tags: string): 'female' | 'male' | null {
   return null;
 }
 
-/** Route remote image URLs through our proxy so hotlink protection doesn't block them. */
 function proxyImage(rawUrl: string | null | undefined): string | null {
   if (!rawUrl) return null;
   return `/api/gelbooru-image?url=${encodeURIComponent(rawUrl)}`;
 }
 
 function toCharacter(post: GelbooruPost): Character {
-  // Prefer preview_url (smaller/faster), then sample_url, then file_url
-  const image = post.preview_url || post.sample_url || post.file_url;
+  // preview_url (thumbnail) is the only image that reliably bypasses hotlink protection
   return {
     id: post.id,
     name: extractCharacterName(post.tags),
-    imageUrl: proxyImage(image),
+    imageUrl: proxyImage(post.preview_url),
     gender: extractGender(post.tags),
     favorites: post.score ?? 0,
   };
