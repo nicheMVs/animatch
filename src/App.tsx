@@ -1,8 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { RefreshCw } from 'lucide-react';
+import { History, RefreshCw } from 'lucide-react';
 import LandingScreen from './components/LandingScreen';
-import FilterScreen from './components/FilterScreen';
 import GameScreen from './components/GameScreen';
 import HistoryScreen from './components/HistoryScreen';
 import SkeletonCard from './components/SkeletonCard';
@@ -11,7 +10,7 @@ import { getCachedDeck, setCachedDeck } from './services/storage';
 import { SETTINGS } from './config/settings';
 import type { Character, DeckFilter } from './types/character';
 
-type Screen = 'landing' | 'filter' | 'game' | 'history';
+type Screen = 'landing' | 'game' | 'history';
 type Status = 'loading' | 'ready' | 'error';
 
 const sourceId = 'anilist' as const;
@@ -38,7 +37,7 @@ const emptyFilterState = (): FilterState => ({
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('landing');
-  const [historyReturn, setHistoryReturn] = useState<Screen>('filter');
+  const [historyReturn, setHistoryReturn] = useState<Screen>('landing');
   const [filter, setFilter] = useState<DeckFilter>('waifus');
 
   const [waifus, setWaifus] = useState<FilterState>(emptyFilterState);
@@ -67,17 +66,8 @@ export default function App() {
 
       try {
         const exclude = mode === 'initial' ? new Set<number>() : new Set(current.fetched);
-        // Always start from a random page so each fetch is a fresh slice
-        const startPage = 1;
 
-        const result = await source.fetch(
-          f,
-          exclude,
-          startPage,
-          undefined,
-          SETTINGS.DECK_SIZE,
-          true // always randomStart
-        );
+        const result = await source.fetch(f, exclude, 1, undefined, SETTINGS.DECK_SIZE, true);
 
         if (result.characters.length === 0) {
           setState(f, (s) => ({ ...s, status: 'ready', exhausted: true }));
@@ -184,7 +174,7 @@ export default function App() {
             <RefreshCw size={14} /> Try again
           </button>
           <button
-            onClick={() => setScreen('filter')}
+            onClick={() => setScreen('landing')}
             className="text-xs font-light uppercase tracking-[0.2em] text-white/40 transition hover:text-white/70"
           >
             Back
@@ -202,7 +192,7 @@ export default function App() {
         filterId={filter}
         filterLabel={filterLabel}
         sourceId={sourceId}
-        onBack={() => setScreen('filter')}
+        onBack={() => setScreen('landing')}
         onHistory={() => openHistory('game')}
         onMarkSeen={(id) => {
           setState(filter, (state) => {
@@ -229,15 +219,19 @@ export default function App() {
           exit={{ opacity: 0, y: -12 }}
           transition={{ duration: 0.2 }}
         >
-          {screen === 'landing' && <LandingScreen onEnter={() => setScreen('filter')} />}
-          {screen === 'filter' && (
-            <FilterScreen
-              sourceName={source.name}
-              sourceFilters={source.filters}
-              onSelect={(f) => enterMatch(f)}
-              onHistory={() => openHistory('filter')}
-              onBack={() => setScreen('landing')}
-            />
+          {screen === 'landing' && (
+            <div className="relative h-full">
+              <header className="absolute top-4 right-4 z-10">
+                <button
+                  onClick={() => openHistory('landing')}
+                  className="rounded-full p-2 text-white/50 transition hover:bg-white/5 hover:text-white"
+                  aria-label="History"
+                >
+                  <History size={20} />
+                </button>
+              </header>
+              <LandingScreen onSelect={(f) => enterMatch(f)} />
+            </div>
           )}
           {screen === 'game' && renderGame()}
           {screen === 'history' && (
