@@ -23,7 +23,10 @@ export default function App() {
 
   const [deck, setDeck] = useState<Character[]>([]);
   const [nextPage, setNextPage] = useState(1);
+  /** Characters the user has already swiped on (any filter). */
   const [seenIds, setSeenIds] = useState<Set<number>>(new Set());
+  /** Characters already fetched from the source (avoid duplicates on refill). */
+  const [fetchedIds, setFetchedIds] = useState<Set<number>>(new Set());
   const [status, setStatus] = useState<DeckStatus>('loading');
   const [loadingMode, setLoadingMode] = useState<LoadingMode>('initial');
   const [progress, setProgress] = useState({ loaded: 0, total: 0 });
@@ -44,9 +47,9 @@ export default function App() {
       setProgress({ loaded: 0, total: 0 });
 
       try {
-        const exclude = mode === 'initial' ? new Set<number>() : new Set(seenIds);
-        const startPage =
-          mode === 'initial' ? 1 : emptyRefills.current > 0 ? 0 : nextPage;
+        // Exclude everything we've ever fetched so refill returns new characters
+        const exclude = mode === 'initial' ? new Set<number>() : new Set(fetchedIds);
+        const startPage = mode === 'initial' ? 1 : emptyRefills.current > 0 ? 0 : nextPage;
 
         const result = await source.fetch(
           exclude,
@@ -71,15 +74,15 @@ export default function App() {
         emptyRefills.current = 0;
 
         const newDeck = mode === 'initial' ? result.characters : [...deck, ...result.characters];
-        const newSeen = new Set([...seenIds, ...result.characters.map((c) => c.id)]);
+        const newFetched = new Set([...fetchedIds, ...result.characters.map((c) => c.id)]);
 
         setDeck(newDeck);
-        setSeenIds(newSeen);
+        setFetchedIds(newFetched);
         setNextPage(result.nextPage);
         setCachedDeck(sourceId, {
           characters: newDeck,
           nextPage: result.nextPage,
-          seenIds: [...newSeen],
+          seenIds: [...newFetched],
           order: newDeck.map((c) => c.id),
         });
         setStatus('ready');
@@ -90,7 +93,7 @@ export default function App() {
         fetching.current = false;
       }
     },
-    [deck, nextPage, seenIds, source, sourceId]
+    [deck, nextPage, fetchedIds, source, sourceId]
   );
 
   const enterMatch = useCallback(() => {
@@ -103,11 +106,15 @@ export default function App() {
     if (cached && cached.characters.length > 0) {
       setDeck(cached.characters);
       setNextPage(cached.nextPage);
-      setSeenIds(new Set(cached.seenIds));
+      setFetchedIds(new Set(cached.seenIds));
+      // seenIds starts empty — the user hasn't necessarily swiped on anything yet.
+      // We could persist per-character seen state, but for now start fresh.
+      setSeenIds(new Set());
       setStatus('ready');
     } else {
       setDeck([]);
       setNextPage(1);
+      setFetchedIds(new Set());
       setSeenIds(new Set());
       void loadMore('initial');
     }
@@ -115,13 +122,11 @@ export default function App() {
   }, [loadMore, sourceId]);
 
   /**
-   * The filtered deck now also excludes anything already seen.
-   * This ensures "Everyone" never shows characters already swiped in
-   * "Waifus" or "Husbandos".
+   * The filtered deck excludes characters the user has already swiped on.
+   * This makes "Everyone" respect what's been seen in "Waifus" and "Husbandos".
    */
   const filteredDeck = useMemo(() => {
     const base = source.filter(deck, filter);
-    // Filter out characters that have been seen in any filter
     return base.filter((c) => !seenIds.has(c.id));
   }, [source, deck, filter, seenIds]);
 
@@ -134,29 +139,14 @@ export default function App() {
     if (!exhausted) void loadMore('refill');
   }, [loadMore, exhausted]);
 
-  /**
-   * Called by GameScreen when the user swipes a character.
-   * Marks the character as seen globally.
-   */
-  const handleMarkSeen = useCallback(
-    (characterId: number) => {
-      setSeenIds((prev) => {
-        if (prev.has(characterId)) return prev;
-        const next = new Set(prev);
-        next.add(characterId);
-        // Also persist to storage so refreshes keep the seen state
-        const cached = getCachedDeck(sourceId);
-        if (cached) {
-          setCachedDeck(sourceId, {
-            ...cached,
-            seenIds: [...next],
-          });
-        }
-        return next;
-      });
-    },
-    [sourceId]
-  );
+  const handleMarkSeen = useCallback((characterId: number) => {
+    setSeenIds((prev) => {
+      if (prev.has(characterId)) return prev;
+      const next = new Set(prev);
+      next.add(characterId);
+      return next;
+    });
+  }, []);
 
   const renderGame = () => {
     if (status === 'loading') {
