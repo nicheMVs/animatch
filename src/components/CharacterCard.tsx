@@ -42,16 +42,6 @@ function exitTarget(dir: SwipeDirection) {
   }
 }
 
-function vibrate(ms: number) {
-  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-    try {
-      navigator.vibrate(ms);
-    } catch {
-      /* ignore */
-    }
-  }
-}
-
 function Stamp({
   action,
   x,
@@ -114,7 +104,6 @@ const CharacterCard = forwardRef<CharacterCardHandle, CharacterCardProps>(functi
   const scale = useMotionValue(1);
   const busy = useRef(false);
   const [imageFailed, setImageFailed] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
 
   const rotate = useTransform(x, [-300, 0, 300], [-18, 0, 18]);
 
@@ -127,7 +116,6 @@ const CharacterCard = forwardRef<CharacterCardHandle, CharacterCardProps>(functi
   const flyOut = (action: ActionConfig) => {
     if (busy.current) return;
     busy.current = true;
-    vibrate(12);
     const target = exitTarget(action.swipeDirection);
     const opts = { duration: FLY_DURATION, ease: [0.32, 0.72, 0.35, 1] as const };
     animate(x, target.x, opts);
@@ -137,7 +125,6 @@ const CharacterCard = forwardRef<CharacterCardHandle, CharacterCardProps>(functi
   const skipOut = () => {
     if (busy.current) return;
     busy.current = true;
-    vibrate(8);
     animate(scale, 0.7, { duration: 0.25 });
     animate(opacity, 0, { duration: 0.25 }).then(() => onSkip());
   };
@@ -200,18 +187,14 @@ const CharacterCard = forwardRef<CharacterCardHandle, CharacterCardProps>(functi
     >
       {showImage ? (
         <motion.img
+          key={character.id}
           src={character.imageUrl!}
           alt={character.name}
           draggable={false}
           onError={() => setImageFailed(true)}
-          onLoad={() => setImageLoaded(true)}
-          initial={{ opacity: 0, scale: 1.03 }}
-          animate={
-            imageLoaded
-              ? { opacity: 1, scale: 1 }
-              : { opacity: 0, scale: 1.03 }
-          }
-          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          initial={{ opacity: 0, scale: 1.04 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
           className="h-full w-full object-cover"
         />
       ) : (
