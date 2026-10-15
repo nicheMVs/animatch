@@ -30,7 +30,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [exhausted, setExhausted] = useState(false);
   const fetching = useRef(false);
-  // Track how many consecutive empty refills we've had
   const emptyRefills = useRef(0);
 
   const source = getSource(sourceId);
@@ -46,8 +45,6 @@ export default function App() {
 
       try {
         const exclude = mode === 'initial' ? new Set<number>() : new Set(seenIds);
-
-        // For a refill that keeps returning empty, use a fresh random page
         const startPage =
           mode === 'initial' ? 1 : emptyRefills.current > 0 ? 0 : nextPage;
 
@@ -62,18 +59,15 @@ export default function App() {
         if (result.characters.length === 0) {
           emptyRefills.current += 1;
           if (emptyRefills.current >= 2) {
-            // Two empty refills in a row — actually exhausted
             setExhausted(true);
             setStatus('ready');
           } else {
-            // Try again with a fresh random start
             fetching.current = false;
             void loadMore('refill');
           }
           return;
         }
 
-        // Success — reset the empty counter
         emptyRefills.current = 0;
 
         const newDeck = mode === 'initial' ? result.characters : [...deck, ...result.characters];
@@ -120,7 +114,16 @@ export default function App() {
     setScreen('filter');
   }, [loadMore, sourceId]);
 
-  const filteredDeck = useMemo(() => source.filter(deck, filter), [source, deck, filter]);
+  /**
+   * The filtered deck now also excludes anything already seen.
+   * This ensures "Everyone" never shows characters already swiped in
+   * "Waifus" or "Husbandos".
+   */
+  const filteredDeck = useMemo(() => {
+    const base = source.filter(deck, filter);
+    // Filter out characters that have been seen in any filter
+    return base.filter((c) => !seenIds.has(c.id));
+  }, [source, deck, filter, seenIds]);
 
   const openHistory = (from: Screen) => {
     setHistoryReturn(from);
@@ -130,6 +133,30 @@ export default function App() {
   const handleDeckExhausted = useCallback(() => {
     if (!exhausted) void loadMore('refill');
   }, [loadMore, exhausted]);
+
+  /**
+   * Called by GameScreen when the user swipes a character.
+   * Marks the character as seen globally.
+   */
+  const handleMarkSeen = useCallback(
+    (characterId: number) => {
+      setSeenIds((prev) => {
+        if (prev.has(characterId)) return prev;
+        const next = new Set(prev);
+        next.add(characterId);
+        // Also persist to storage so refreshes keep the seen state
+        const cached = getCachedDeck(sourceId);
+        if (cached) {
+          setCachedDeck(sourceId, {
+            ...cached,
+            seenIds: [...next],
+          });
+        }
+        return next;
+      });
+    },
+    [sourceId]
+  );
 
   const renderGame = () => {
     if (status === 'loading') {
@@ -213,6 +240,7 @@ export default function App() {
         onHistory={() => openHistory('game')}
         onExhausted={handleDeckExhausted}
         exhausted={exhausted}
+        onMarkSeen={handleMarkSeen}
       />
     );
   };

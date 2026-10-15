@@ -23,6 +23,7 @@ interface GameScreenProps {
   onHistory: () => void;
   onExhausted: () => void;
   exhausted: boolean;
+  onMarkSeen: (characterId: number) => void;
 }
 
 const KEY_TO_DIRECTION: Record<string, SwipeDirection> = {
@@ -72,6 +73,7 @@ export default function GameScreen({
   onHistory,
   onExhausted,
   exhausted,
+  onMarkSeen,
 }: GameScreenProps) {
   const charMap = useMemo(() => {
     const m = new Map<number, Character>();
@@ -130,7 +132,6 @@ export default function GameScreen({
     });
   }, [orderIds, index, charMap]);
 
-  // Trigger refill whenever we run out (and the source isn't truly exhausted)
   useEffect(() => {
     if (finished && !exhausted && !alreadyTriggered.current) {
       alreadyTriggered.current = true;
@@ -148,12 +149,16 @@ export default function GameScreen({
         actionId,
         timestamp: Date.now(),
       });
+      onMarkSeen(current.id);
       setIndex((i) => i + 1);
     },
-    [current, sourceId]
+    [current, sourceId, onMarkSeen]
   );
 
-  const handleSkip = useCallback(() => setIndex((i) => i + 1), []);
+  const handleSkip = useCallback(() => {
+    if (current) onMarkSeen(current.id);
+    setIndex((i) => i + 1);
+  }, [current, onMarkSeen]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -174,7 +179,6 @@ export default function GameScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // ----- True empty state (source exhausted) -----
   if (orderIds.length === 0 && exhausted) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6">
@@ -208,7 +212,6 @@ export default function GameScreen({
     );
   }
 
-  // ----- Refilling state (running low, waiting for new characters) -----
   if (finished && !exhausted) {
     return (
       <div className="flex h-full flex-col px-4 pb-4 pt-3">
@@ -232,7 +235,6 @@ export default function GameScreen({
     );
   }
 
-  // ----- Normal card view -----
   return (
     <div className="flex h-full flex-col px-4 pb-4 pt-3">
       <header className="flex items-center justify-between">
