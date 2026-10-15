@@ -20,7 +20,7 @@ const SOURCES = [
     subtitle: 'Booru characters from Gelbooru',
     tagline: 'Kiss · Marry · Kill',
     icon: Sparkles,
-    enabled: false,
+    enabled: true,
   },
 ];
 
@@ -52,15 +52,10 @@ export default function LandingScreen({ onSelect }: LandingScreenProps) {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.1 + i * 0.08 }}
-              whileHover={src.enabled ? { scale: 1.02 } : undefined}
-              whileTap={src.enabled ? { scale: 0.98 } : undefined}
-              onClick={() => src.enabled && onSelect(src.id)}
-              disabled={!src.enabled}
-              className={`group flex w-full items-start gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.02] px-5 py-5 text-left backdrop-blur-sm transition-colors ${
-                src.enabled
-                  ? 'hover:border-white/[0.18] hover:bg-white/[0.05]'
-                  : 'cursor-not-allowed opacity-40'
-              }`}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => onSelect(src.id)}
+              className="group flex w-full items-start gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.02] px-5 py-5 text-left backdrop-blur-sm transition-colors hover:border-white/[0.18] hover:bg-white/[0.05]"
             >
               <span className="mt-0.5 flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/70 transition-colors group-hover:border-white/25 group-hover:text-white">
                 <Icon size={22} strokeWidth={1.5} />
@@ -74,11 +69,9 @@ export default function LandingScreen({ onSelect }: LandingScreenProps) {
                   {src.tagline}
                 </span>
               </span>
-              {src.enabled && (
-                <span className="mt-1 text-white/20 transition-all group-hover:translate-x-0.5 group-hover:text-white/50">
-                  →
-                </span>
-              )}
+              <span className="mt-1 text-white/20 transition-all group-hover:translate-x-0.5 group-hover:text-white/50">
+                →
+              </span>
             </motion.button>
           );
         })}
