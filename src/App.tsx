@@ -76,7 +76,7 @@ export default function App() {
         fetching.current = false;
       }
     },
-    [deck, nextPage, seenIds, source]
+    [deck, nextPage, seenIds, source, sourceId]
   );
 
   const enterMatch = useCallback(() => {
@@ -179,6 +179,7 @@ export default function App() {
       <GameScreen
         characters={filteredDeck}
         filterLabel={filterLabel}
+        filterId={filter}
         sourceId={sourceId}
         onBack={() => setScreen('filter')}
         onHistory={() => openHistory('game')}

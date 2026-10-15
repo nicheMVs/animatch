@@ -2,8 +2,8 @@ import { SETTINGS } from '../config/settings';
 import type { Character } from '../types/character';
 import type { Choice } from '../types/choice';
 
-function scopedKey(base: string, sourceId: string): string {
-  return `${base}__${sourceId}`;
+function scopedKey(base: string, sourceId: string, filter?: string): string {
+  return filter ? `${base}__${sourceId}__${filter}` : `${base}__${sourceId}`;
 }
 
 function readJson<T>(key: string, fallback: T): T {
@@ -95,26 +95,35 @@ export function clearCachedDeck(sourceId: string): void {
   }
 }
 
-// ── Deck progress (current card index) ───────────────────
+// ── Per-filter deck progress ─────────────────────────────
+// The current card index is stored per (sourceId, filter) so switching
+// between Waifus / Husbandos / Everyone each keeps its own place.
 
-export function getSavedIndex(sourceId: string): number {
-  const value = readJson<number>(scopedKey(SETTINGS.PROGRESS_KEY, sourceId), 0);
+export function getSavedIndex(sourceId: string, filter: string): number {
+  const value = readJson<number>(scopedKey(SETTINGS.PROGRESS_KEY, sourceId, filter), 0);
   return typeof value === 'number' && value >= 0 ? value : 0;
 }
 
-export function setSavedIndex(sourceId: string, index: number): void {
-  writeJson(scopedKey(SETTINGS.PROGRESS_KEY, sourceId), index);
+export function setSavedIndex(sourceId: string, filter: string, index: number): void {
+  writeJson(scopedKey(SETTINGS.PROGRESS_KEY, sourceId, filter), index);
 }
 
-export function clearSavedIndex(sourceId: string): void {
+export function clearSavedIndex(sourceId: string, filter?: string): void {
   try {
-    localStorage.removeItem(scopedKey(SETTINGS.PROGRESS_KEY, sourceId));
+    if (filter) {
+      localStorage.removeItem(scopedKey(SETTINGS.PROGRESS_KEY, sourceId, filter));
+    } else {
+      // Wipe all filters for this source
+      for (const f of ['waifus', 'husbandos', 'both']) {
+        localStorage.removeItem(scopedKey(SETTINGS.PROGRESS_KEY, sourceId, f));
+      }
+    }
   } catch {
     /* ignore */
   }
 }
 
-// ── Full reset (one source) ──────────────────────────────
+// ── Full reset ───────────────────────────────────────────
 
 export function clearAll(sourceId: string): void {
   clearHistory(sourceId);

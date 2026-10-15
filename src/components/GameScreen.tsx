@@ -3,13 +3,14 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, History, SkipForward } from 'lucide-react';
 import { ACTIONS_IN_BUTTON_ORDER, getActionByDirection, type SwipeDirection } from '../config/actions';
 import { addChoice, getSavedIndex, setSavedIndex } from '../services/storage';
-import type { Character } from '../types/character';
+import type { Character, DeckFilter } from '../types/character';
 import ActionButton from './ActionButton';
 import CharacterCard, { type CharacterCardHandle } from './CharacterCard';
 
 interface GameScreenProps {
   characters: Character[];
   filterLabel: string;
+  filterId: DeckFilter;
   sourceId: string;
   onBack: () => void;
   onHistory: () => void;
@@ -27,6 +28,7 @@ const KEY_TO_DIRECTION: Record<string, SwipeDirection> = {
 export default function GameScreen({
   characters,
   filterLabel,
+  filterId,
   sourceId,
   onBack,
   onHistory,
@@ -42,15 +44,23 @@ export default function GameScreen({
   const orderIds = useMemo(() => characters.map((c) => c.id), [characters]);
 
   const [index, setIndex] = useState<number>(() => {
-    const saved = getSavedIndex(sourceId);
+    const saved = getSavedIndex(sourceId, filterId);
     return saved < orderIds.length ? saved : 0;
   });
   const cardRef = useRef<CharacterCardHandle>(null);
   const alreadyTriggered = useRef(false);
 
+  // Reset index when the filter changes
   useEffect(() => {
-    setSavedIndex(sourceId, index);
-  }, [sourceId, index]);
+    const saved = getSavedIndex(sourceId, filterId);
+    setIndex(saved < orderIds.length ? saved : 0);
+    alreadyTriggered.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceId, filterId]);
+
+  useEffect(() => {
+    setSavedIndex(sourceId, filterId, index);
+  }, [sourceId, filterId, index]);
 
   useEffect(() => {
     if (index >= orderIds.length && orderIds.length > 0) {
@@ -126,7 +136,7 @@ export default function GameScreen({
           <ArrowLeft size={20} />
         </button>
         <div className="text-center">
-          <h1 className="font-display text-2xl leading-none tracking-tight text-white">Match</h1>
+          <h1 className="font-display text-2xl leading-none tracking-tight text-white">AniMatch</h1>
           <p className="mt-1 text-[10px] font-light uppercase tracking-[0.25em] text-white/40">
             {filterLabel} · {Math.min(index + 1, orderIds.length)}/{orderIds.length}
           </p>
