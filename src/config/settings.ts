@@ -5,4 +5,6 @@ export const SETTINGS = {
   STORAGE_KEY: 'animatch_history',
   DECK_CACHE_KEY: 'animatch_deck_cache',
   PROGRESS_KEY: 'animatch_progress',
+  SWIPE_THRESHOLD_PX: 110,
+  SWIPE_VELOCITY: 500,
 };
