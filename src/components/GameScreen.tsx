@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, History, SkipForward } from 'lucide-react';
 import { ACTIONS_IN_BUTTON_ORDER, getActionByDirection, type SwipeDirection } from '../config/actions';
-import { addChoice, getSavedIndex, setSavedIndex } from '../services/storage';
+import {
+  addChoice,
+  getSavedIndex,
+  getSavedOrder,
+  setSavedIndex,
+  setSavedOrder,
+} from '../services/storage';
 import type { Character, DeckFilter } from '../types/character';
 import ActionButton from './ActionButton';
 import CharacterCard, { type CharacterCardHandle } from './CharacterCard';
@@ -27,6 +33,43 @@ const KEY_TO_DIRECTION: Record<string, SwipeDirection> = {
   ArrowDown: 'down',
 };
 
+function shuffleArray<T>(arr: T[]): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+/**
+ * Build or restore a stable shuffled order for this filter.
+ * - If a saved order exists and matches the current character set, reuse it.
+ * - If new characters arrived, append them in shuffled order.
+ * - Otherwise, create a new shuffled order and save it.
+ */
+function resolveOrder(sourceId: string, filterId: DeckFilter, characters: Character[]): number[] {
+  const currentIds = characters.map((c) => c.id);
+  const currentSet = new Set(currentIds);
+  const saved = getSavedOrder(sourceId, filterId);
+
+  if (saved) {
+    const valid = saved.filter((id) => currentSet.has(id));
+    const savedSet = new Set(valid);
+    const additions = shuffleArray(currentIds.filter((id) => !savedSet.has(id)));
+
+    if (additions.length === 0 && valid.length === saved.length) return saved;
+
+    const merged = [...valid, ...additions];
+    setSavedOrder(sourceId, filterId, merged);
+    return merged;
+  }
+
+  const shuffled = shuffleArray(currentIds);
+  setSavedOrder(sourceId, filterId, shuffled);
+  return shuffled;
+}
+
 export default function GameScreen({
   characters,
   filterLabel,
@@ -38,49 +81,62 @@ export default function GameScreen({
   onRefill,
   exhausted,
 }: GameScreenProps) {
-  // Snapshot a shuffled copy once. Never recomputed.
-  const order = useMemo(() => {
-    const copy = [...characters];
-    for (let i = copy.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [copy[i], copy[j]] = [copy[j], copy[i]];
-    }
-    return copy;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [characters.length, characters[0]?.id ?? 0]);
+  const charMap = new Map(characters.map((c) => [c.id, c]));
+
+  const [orderIds, setOrderIds] = useState<number[]>(() =>
+    resolveOrder(sourceId, filterId, characters)
+  );
 
   const [index, setIndex] = useState<number>(() => {
     const saved = getSavedIndex(sourceId, filterId);
-    return saved >= 0 && saved < order.length ? saved : 0;
+    return saved >= 0 && saved < orderIds.length ? saved : 0;
   });
+
   const cardRef = useRef<CharacterCardHandle>(null);
   const refillTriggered = useRef(false);
+  const lastKey = useRef<string>(`${sourceId}:${filterId}:${characters.length}`);
 
+  // Re-resolve order when the character set changes (new refill batch)
+  useEffect(() => {
+    const key = `${sourceId}:${filterId}:${characters.length}`;
+    if (key === lastKey.current) return;
+    lastKey.current = key;
+
+    const next = resolveOrder(sourceId, filterId, characters);
+    setOrderIds(next);
+    refillTriggered.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceId, filterId, characters.length]);
+
+  // Persist index on change
   useEffect(() => {
     setSavedIndex(sourceId, filterId, index);
   }, [sourceId, filterId, index]);
 
+  // Restore index when filter changes
   useEffect(() => {
     const saved = getSavedIndex(sourceId, filterId);
-    setIndex(saved >= 0 && saved < order.length ? saved : 0);
+    setIndex(saved >= 0 && saved < orderIds.length ? saved : 0);
     refillTriggered.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceId, filterId]);
 
-  const current = order[index];
-  const next = order[index + 1];
-  const finished = order.length === 0 || index >= order.length;
+  const current = charMap.get(orderIds[index]);
+  const next = charMap.get(orderIds[index + 1]);
+  const finished = orderIds.length === 0 || index >= orderIds.length;
 
+  // Preload
   useEffect(() => {
-    order.slice(index + 1, index + 4).forEach((c) => {
-      if (c.imageUrl) {
+    orderIds.slice(index + 1, index + 4).forEach((id) => {
+      const c = charMap.get(id);
+      if (c?.imageUrl) {
         const img = new Image();
         img.src = c.imageUrl;
       }
     });
-  }, [order, index]);
+  }, [orderIds, index, charMap]);
 
-  // Trigger refill when the queue is exhausted
+  // Trigger refill when exhausted
   useEffect(() => {
     if (finished && !exhausted && !refillTriggered.current) {
       refillTriggered.current = true;
@@ -128,7 +184,6 @@ export default function GameScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Refilling
   if (finished && !exhausted) {
     return (
       <div className="flex h-full flex-col px-4 pb-4 pt-3">
@@ -152,7 +207,6 @@ export default function GameScreen({
     );
   }
 
-  // Exhausted
   if (finished && exhausted) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6">
@@ -201,7 +255,7 @@ export default function GameScreen({
         <div className="text-center">
           <h1 className="font-display text-2xl leading-none tracking-tight text-white">AniMatch</h1>
           <p className="mt-1 text-[10px] font-light uppercase tracking-[0.25em] text-white/40">
-            {filterLabel} · {index + 1}/{order.length}
+            {filterLabel} · {index + 1}/{orderIds.length}
           </p>
         </div>
         <button
