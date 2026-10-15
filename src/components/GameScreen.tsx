@@ -26,6 +26,15 @@ const KEY_TO_DIRECTION: Record<string, SwipeDirection> = {
   ArrowDown: 'down',
 };
 
+function shuffleArray<T>(arr: T[]): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 export default function GameScreen({
   characters,
   filterLabel,
@@ -36,14 +45,17 @@ export default function GameScreen({
   onMarkDisplayed,
   exhausted,
 }: GameScreenProps) {
-  // Persisted per-filter index — the *position* in the character list.
+  // Snapshot the shuffled order for this session. Never recompute mid-session.
+  const [order] = useState<Character[]>(() => shuffleArray(characters));
+
+  // Persistent per-filter index into the snapshot.
   const [index, setIndex] = useState<number>(() => {
     const saved = getSavedIndex(sourceId, filterId);
-    return saved >= 0 ? saved : 0;
+    return saved >= 0 && saved < order.length ? saved : 0;
   });
   const cardRef = useRef<CharacterCardHandle>(null);
 
-  // Persist index whenever it changes
+  // Persist index on change
   useEffect(() => {
     setSavedIndex(sourceId, filterId, index);
   }, [sourceId, filterId, index]);
@@ -51,30 +63,23 @@ export default function GameScreen({
   // Restore index when the filter changes
   useEffect(() => {
     const saved = getSavedIndex(sourceId, filterId);
-    setIndex(saved >= 0 ? saved : 0);
+    setIndex(saved >= 0 && saved < order.length ? saved : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceId, filterId]);
 
-  // Clamp if the list shrinks
-  useEffect(() => {
-    if (index > characters.length && characters.length > 0) {
-      setIndex(characters.length);
-    }
-  }, [characters.length, index]);
-
-  const current = characters[index];
-  const next = characters[index + 1];
-  const finished = characters.length === 0 || index >= characters.length;
+  const current = order[index];
+  const next = order[index + 1];
+  const finished = order.length === 0 || index >= order.length;
 
   // Preload
   useEffect(() => {
-    characters.slice(index + 1, index + 4).forEach((c) => {
+    order.slice(index + 1, index + 4).forEach((c) => {
       if (c.imageUrl) {
         const img = new Image();
         img.src = c.imageUrl;
       }
     });
-  }, [characters, index]);
+  }, [order, index]);
 
   const handleAction = useCallback(
     (actionId: string) => {
@@ -116,7 +121,7 @@ export default function GameScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Refilling — App is loading more characters
+  // Refilling — App is loading more
   if (finished && !exhausted) {
     return (
       <div className="flex h-full flex-col px-4 pb-4 pt-3">
@@ -189,7 +194,7 @@ export default function GameScreen({
         <div className="text-center">
           <h1 className="font-display text-2xl leading-none tracking-tight text-white">AniMatch</h1>
           <p className="mt-1 text-[10px] font-light uppercase tracking-[0.25em] text-white/40">
-            {filterLabel}
+            {filterLabel} · {index + 1}/{order.length}
           </p>
         </div>
         <button

@@ -130,13 +130,19 @@ export default function App() {
     setScreen('filter');
   }, [loadMore, sourceId]);
 
-  const filteredDeck = useMemo(() => source.filter(deck, filter), [source, deck, filter]);
-
-  /** Characters not yet displayed. What the game screen pulls from. */
-  const availableDeck = useMemo(
-    () => filteredDeck.filter((c) => !displayedIds.has(c.id)),
-    [filteredDeck, displayedIds]
-  );
+  /**
+   * The full filtered deck. NO exclusion of displayedIds.
+   * GameScreen snapshots its own shuffled order from this and handles
+   * cross-filter skipping internally.
+   */
+  const filteredDeck = useMemo(() => {
+    const base = source.filter(deck, filter);
+    // Only exclude displayed characters ONCE, at filter build time.
+    // This is the snapshot GameScreen inherits.
+    return base.filter((c) => !displayedIds.has(c.id));
+    // Intentionally NOT depending on displayedIds to avoid mid-session rebuild.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, deck, filter]);
 
   const openHistory = (from: Screen) => {
     setHistoryReturn(from);
@@ -155,18 +161,18 @@ export default function App() {
     [setDisplayedIds]
   );
 
-  // Refill when the available deck runs empty
+  // Refill when the filtered deck runs out of fresh characters
   useEffect(() => {
     if (
       status === 'ready' &&
       !exhausted &&
       !fetching.current &&
-      availableDeck.length === 0 &&
+      filteredDeck.length === 0 &&
       deck.length > 0
     ) {
       void loadMore('refill');
     }
-  }, [status, exhausted, availableDeck.length, deck.length, loadMore]);
+  }, [status, exhausted, filteredDeck.length, deck.length, loadMore]);
 
   const renderGame = () => {
     if (status === 'loading') {
@@ -242,7 +248,8 @@ export default function App() {
     const filterLabel = source.filters.find((f) => f.id === filter)?.label ?? 'Everyone';
     return (
       <GameScreen
-        characters={availableDeck}
+        key={`${filterIdKey(sourceId, filter)}-${filteredDeck.length}`}
+        characters={filteredDeck}
         filterLabel={filterLabel}
         filterId={filter}
         sourceId={sourceId}
@@ -291,4 +298,8 @@ export default function App() {
       </AnimatePresence>
     </div>
   );
+}
+
+function filterIdKey(sourceId: string, filter: string) {
+  return `${sourceId}:${filter}`;
 }
