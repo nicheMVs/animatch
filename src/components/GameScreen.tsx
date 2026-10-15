@@ -25,6 +25,16 @@ const KEY_TO_DIRECTION: Record<string, SwipeDirection> = {
   ArrowDown: 'down',
 };
 
+/** Fisher–Yates shuffle. */
+function shuffleArray<T>(arr: T[]): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 export default function GameScreen({
   characters,
   filterLabel,
@@ -41,7 +51,32 @@ export default function GameScreen({
     return m;
   }, [characters]);
 
-  const orderIds = useMemo(() => characters.map((c) => c.id), [characters]);
+  /**
+   * The shuffled order for this filter. We keep it in state so it doesn't
+   * re-shuffle on every render. It regenerates only when the filter or the
+   * underlying set of characters changes.
+   */
+  const [orderIds, setOrderIds] = useState<number[]>(() =>
+    shuffleArray(characters.map((c) => c.id))
+  );
+  const lastCharactersKey = useRef<string>('');
+
+  // Recompute the shuffled order when the character set changes
+  useEffect(() => {
+    // Build a stable key from the current characters so we don't reshuffle
+    // on every render — only when the actual list changes.
+    const key = `${filterId}:${characters.length}:${characters
+      .slice(0, 5)
+      .map((c) => c.id)
+      .join(',')}`;
+
+    if (key === lastCharactersKey.current) return;
+    lastCharactersKey.current = key;
+
+    setOrderIds(shuffleArray(characters.map((c) => c.id)));
+    alreadyTriggered.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterId, characters]);
 
   const [index, setIndex] = useState<number>(() => {
     const saved = getSavedIndex(sourceId, filterId);
@@ -50,7 +85,7 @@ export default function GameScreen({
   const cardRef = useRef<CharacterCardHandle>(null);
   const alreadyTriggered = useRef(false);
 
-  // Reset index when the filter changes
+  // Restore index when the filter changes
   useEffect(() => {
     const saved = getSavedIndex(sourceId, filterId);
     setIndex(saved < orderIds.length ? saved : 0);
