@@ -139,26 +139,7 @@ export default function App() {
     const s = getState(filter);
 
     if (s.status === 'loading') {
-      return (
-        <div className="flex h-full flex-col px-4 pb-4 pt-3">
-          <header className="flex items-center justify-center">
-            <div>
-              <h1 className="font-display text-2xl leading-none tracking-tight text-white">
-                AniMatch
-              </h1>
-              <p className="mt-1 text-center text-[10px] font-light uppercase tracking-[0.25em] text-white/40">
-                {s.deck.length === 0 ? 'Loading' : 'Finding more…'}
-              </p>
-            </div>
-          </header>
-          <SkeletonCard />
-          <div className="flex items-start justify-center gap-5 opacity-30 sm:gap-7">
-            <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
-            <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
-            <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
-          </div>
-        </div>
-      );
+      return <SkeletonCard label={s.deck.length === 0 ? 'Loading' : 'Finding more'} />;
     }
 
     if (s.status === 'error') {
