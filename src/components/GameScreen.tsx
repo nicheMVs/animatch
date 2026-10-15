@@ -12,7 +12,6 @@ import {
 import type { Character, DeckFilter } from '../types/character';
 import ActionButton from './ActionButton';
 import CharacterCard, { type CharacterCardHandle } from './CharacterCard';
-import SkeletonCard from './SkeletonCard';
 
 interface GameScreenProps {
   characters: Character[];
@@ -42,12 +41,6 @@ function shuffleArray<T>(arr: T[]): T[] {
   return copy;
 }
 
-/**
- * Build or restore a stable shuffled order for this filter.
- * - If a saved order exists and matches the current character set, reuse it.
- * - If new characters arrived, append them in shuffled order.
- * - Otherwise, create a new shuffled order and save it.
- */
 function resolveOrder(sourceId: string, filterId: DeckFilter, characters: Character[]): number[] {
   const currentIds = characters.map((c) => c.id);
   const currentSet = new Set(currentIds);
@@ -94,13 +87,11 @@ export default function GameScreen({
 
   const cardRef = useRef<CharacterCardHandle>(null);
   const refillTriggered = useRef(false);
-  const lastKey = useRef<string>(`${sourceId}:${filterId}:${characters.length}`);
+  const lastLength = useRef<number>(characters.length);
 
-  // Re-resolve order when the character set changes (new refill batch)
   useEffect(() => {
-    const key = `${sourceId}:${filterId}:${characters.length}`;
-    if (key === lastKey.current) return;
-    lastKey.current = key;
+    if (characters.length === lastLength.current) return;
+    lastLength.current = characters.length;
 
     const next = resolveOrder(sourceId, filterId, characters);
     setOrderIds(next);
@@ -108,12 +99,10 @@ export default function GameScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceId, filterId, characters.length]);
 
-  // Persist index on change
   useEffect(() => {
     setSavedIndex(sourceId, filterId, index);
   }, [sourceId, filterId, index]);
 
-  // Restore index when filter changes
   useEffect(() => {
     const saved = getSavedIndex(sourceId, filterId);
     setIndex(saved >= 0 && saved < orderIds.length ? saved : 0);
@@ -125,7 +114,6 @@ export default function GameScreen({
   const next = charMap.get(orderIds[index + 1]);
   const finished = orderIds.length === 0 || index >= orderIds.length;
 
-  // Preload
   useEffect(() => {
     orderIds.slice(index + 1, index + 4).forEach((id) => {
       const c = charMap.get(id);
@@ -136,7 +124,6 @@ export default function GameScreen({
     });
   }, [orderIds, index, charMap]);
 
-  // Trigger refill when exhausted
   useEffect(() => {
     if (finished && !exhausted && !refillTriggered.current) {
       refillTriggered.current = true;
@@ -184,29 +171,8 @@ export default function GameScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  if (finished && !exhausted) {
-    return (
-      <div className="flex h-full flex-col px-4 pb-4 pt-3">
-        <header className="flex items-center justify-center">
-          <div>
-            <h1 className="font-display text-2xl leading-none tracking-tight text-white">
-              AniMatch
-            </h1>
-            <p className="mt-1 text-center text-[10px] font-light uppercase tracking-[0.25em] text-white/40">
-              Finding more…
-            </p>
-          </div>
-        </header>
-        <SkeletonCard />
-        <div className="flex items-start justify-center gap-5 opacity-30 sm:gap-7">
-          <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
-          <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
-          <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
-        </div>
-      </div>
-    );
-  }
-
+  // Exhausted (nothing left, refill gave nothing) — App is responsible for
+  // showing the loading state, so we only render the "that's everyone" screen.
   if (finished && exhausted) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6">
@@ -238,6 +204,12 @@ export default function GameScreen({
         </motion.div>
       </div>
     );
+  }
+
+  // Queue finished but not exhausted — App is fetching more. Render nothing
+  // so the App-level skeleton takes over.
+  if (finished && !exhausted) {
+    return null;
   }
 
   if (!current) return null;

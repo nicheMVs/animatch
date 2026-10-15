@@ -147,7 +147,8 @@ export default function App() {
   const renderGame = () => {
     const s = getState(filter);
 
-    if (s.status === 'loading' && s.deck.length === 0) {
+    // Global loading — either initial fetch or refill
+    if (s.status === 'loading') {
       return (
         <div className="flex h-full flex-col px-4 pb-4 pt-3">
           <header className="flex items-center justify-center">
@@ -156,7 +157,7 @@ export default function App() {
                 AniMatch
               </h1>
               <p className="mt-1 text-center text-[10px] font-light uppercase tracking-[0.25em] text-white/40">
-                Loading
+                {s.deck.length === 0 ? 'Loading' : 'Finding more…'}
               </p>
             </div>
           </header>
@@ -196,7 +197,7 @@ export default function App() {
 
     return (
       <GameScreen
-        key={filter}
+        key={`${filter}-${s.deck.length}`}
         characters={s.deck}
         filterId={filter}
         filterLabel={filterLabel}
