@@ -28,9 +28,7 @@ export default function App() {
 
   const [deck, setDeck] = useState<Character[]>([]);
   const [nextPage, setNextPage] = useState(1);
-  /** Characters the user has already swiped on (any filter). Persisted. */
   const [seenIds, setSeenIdsState] = useState<Set<number>>(() => getSeenIds(sourceId));
-  /** Characters already fetched from the source (avoid duplicates on refill). */
   const [fetchedIds, setFetchedIds] = useState<Set<number>>(new Set());
   const [status, setStatus] = useState<DeckStatus>('loading');
   const [loadingMode, setLoadingMode] = useState<LoadingMode>('initial');
@@ -42,7 +40,6 @@ export default function App() {
 
   const source = getSource(sourceId);
 
-  // Wrapper that keeps localStorage in sync whenever seenIds changes.
   const setSeenIds = useCallback(
     (updater: Set<number> | ((prev: Set<number>) => Set<number>)) => {
       setSeenIdsState((prev) => {
@@ -133,10 +130,12 @@ export default function App() {
     setScreen('filter');
   }, [loadMore, sourceId]);
 
-  const filteredDeck = useMemo(() => {
-    const base = source.filter(deck, filter);
-    return base.filter((c) => !seenIds.has(c.id));
-  }, [source, deck, filter, seenIds]);
+  /**
+   * Filtered deck NO LONGER excludes seen characters. That filtering happens
+   * inside GameScreen when it builds the order, so swiping one card doesn't
+   * rebuild the entire list mid-interaction.
+   */
+  const filteredDeck = useMemo(() => source.filter(deck, filter), [source, deck, filter]);
 
   const openHistory = (from: Screen) => {
     setHistoryReturn(from);
@@ -234,6 +233,7 @@ export default function App() {
     return (
       <GameScreen
         characters={filteredDeck}
+        seenIds={seenIds}
         filterLabel={filterLabel}
         filterId={filter}
         sourceId={sourceId}

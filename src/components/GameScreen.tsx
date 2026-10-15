@@ -16,6 +16,7 @@ import SkeletonCard from './SkeletonCard';
 
 interface GameScreenProps {
   characters: Character[];
+  seenIds: Set<number>;
   filterLabel: string;
   filterId: DeckFilter;
   sourceId: string;
@@ -42,7 +43,17 @@ function shuffleArray<T>(arr: T[]): T[] {
   return copy;
 }
 
-function resolveOrder(sourceId: string, filterId: DeckFilter, characters: Character[]): number[] {
+/**
+ * Resolves the current order for this filter.
+ * Fresh characters (never swiped) are always prioritised; already-seen ones
+ * are appended at the end so we don't rebuild the order when the user swipes.
+ */
+function resolveOrder(
+  sourceId: string,
+  filterId: DeckFilter,
+  characters: Character[],
+  seenIds: Set<number>
+): number[] {
   const currentIds = characters.map((c) => c.id);
   const currentSet = new Set(currentIds);
   const saved = getSavedOrder(sourceId, filterId);
@@ -59,13 +70,16 @@ function resolveOrder(sourceId: string, filterId: DeckFilter, characters: Charac
     return merged;
   }
 
-  const shuffled = shuffleArray(currentIds);
+  const fresh = shuffleArray(currentIds.filter((id) => !seenIds.has(id)));
+  const used = shuffleArray(currentIds.filter((id) => seenIds.has(id)));
+  const shuffled = [...fresh, ...used];
   setSavedOrder(sourceId, filterId, shuffled);
   return shuffled;
 }
 
 export default function GameScreen({
   characters,
+  seenIds,
   filterLabel,
   filterId,
   sourceId,
@@ -82,11 +96,14 @@ export default function GameScreen({
   }, [characters]);
 
   const [orderIds, setOrderIds] = useState<number[]>(() =>
-    resolveOrder(sourceId, filterId, characters)
+    resolveOrder(sourceId, filterId, characters, seenIds)
   );
-  const lastKey = useRef<string>(`${sourceId}:${filterId}:${characters.length}`);
+  const lastKey = useRef<string>(
+    `${sourceId}:${filterId}:${characters.length}`
+  );
   const alreadyTriggered = useRef(false);
 
+  // Recompute order only when the character set (IDs) actually changes
   useEffect(() => {
     const key = `${sourceId}:${filterId}:${characters.length}:${characters
       .slice(0, 5)
@@ -95,7 +112,7 @@ export default function GameScreen({
     if (key === lastKey.current) return;
     lastKey.current = key;
 
-    const next = resolveOrder(sourceId, filterId, characters);
+    const next = resolveOrder(sourceId, filterId, characters, seenIds);
     setOrderIds(next);
     alreadyTriggered.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
