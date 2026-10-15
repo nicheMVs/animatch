@@ -2,13 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, History, SkipForward } from 'lucide-react';
 import { ACTIONS_IN_BUTTON_ORDER, getActionByDirection, type SwipeDirection } from '../config/actions';
-import {
-  addChoice,
-  getSavedIndex,
-  getSavedOrder,
-  setSavedIndex,
-  setSavedOrder,
-} from '../services/storage';
+import { addChoice, getSavedIndex, setSavedIndex } from '../services/storage';
 import type { Character, DeckFilter } from '../types/character';
 import ActionButton from './ActionButton';
 import CharacterCard, { type CharacterCardHandle } from './CharacterCard';
@@ -16,15 +10,13 @@ import SkeletonCard from './SkeletonCard';
 
 interface GameScreenProps {
   characters: Character[];
-  seenIds: Set<number>;
   filterLabel: string;
   filterId: DeckFilter;
   sourceId: string;
   onBack: () => void;
   onHistory: () => void;
-  onExhausted: () => void;
+  onMarkDisplayed: (characterId: number) => void;
   exhausted: boolean;
-  onMarkSeen: (characterId: number) => void;
 }
 
 const KEY_TO_DIRECTION: Record<string, SwipeDirection> = {
@@ -34,177 +26,55 @@ const KEY_TO_DIRECTION: Record<string, SwipeDirection> = {
   ArrowDown: 'down',
 };
 
-function shuffleArray<T>(arr: T[]): T[] {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
-
-/** Build or restore a stable shuffled order for this filter. */
-function resolveOrder(sourceId: string, filterId: DeckFilter, characters: Character[]): number[] {
-  const currentIds = characters.map((c) => c.id);
-  const currentSet = new Set(currentIds);
-  const saved = getSavedOrder(sourceId, filterId);
-
-  if (saved) {
-    const valid = saved.filter((id) => currentSet.has(id));
-    const savedSet = new Set(valid);
-    const additions = shuffleArray(currentIds.filter((id) => !savedSet.has(id)));
-
-    if (additions.length === 0 && valid.length === saved.length) return saved;
-
-    const merged = [...valid, ...additions];
-    setSavedOrder(sourceId, filterId, merged);
-    return merged;
-  }
-
-  const shuffled = shuffleArray(currentIds);
-  setSavedOrder(sourceId, filterId, shuffled);
-  return shuffled;
-}
-
 export default function GameScreen({
   characters,
-  seenIds,
   filterLabel,
   filterId,
   sourceId,
   onBack,
   onHistory,
-  onExhausted,
+  onMarkDisplayed,
   exhausted,
-  onMarkSeen,
 }: GameScreenProps) {
-  const charMap = useMemo(() => {
-    const m = new Map<number, Character>();
-    for (const c of characters) m.set(c.id, c);
-    return m;
-  }, [characters]);
-
-  const [orderIds, setOrderIds] = useState<number[]>(() =>
-    resolveOrder(sourceId, filterId, characters)
-  );
-  const lastKey = useRef<string>(`${sourceId}:${filterId}:${characters.length}`);
-  const alreadyTriggered = useRef(false);
-
-  // Rebuild the order only when the character set (IDs) actually changes
-  useEffect(() => {
-    const key = `${sourceId}:${filterId}:${characters.length}:${characters
-      .slice(0, 5)
-      .map((c) => c.id)
-      .join(',')}`;
-    if (key === lastKey.current) return;
-    lastKey.current = key;
-
-    const next = resolveOrder(sourceId, filterId, characters);
-    setOrderIds(next);
-    alreadyTriggered.current = false;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceId, filterId, characters]);
-
-  // Current position (persisted per filter)
+  // Persisted per-filter index — the *position* in the character list.
   const [index, setIndex] = useState<number>(() => {
     const saved = getSavedIndex(sourceId, filterId);
-    return saved < orderIds.length ? saved : 0;
+    return saved >= 0 ? saved : 0;
   });
   const cardRef = useRef<CharacterCardHandle>(null);
 
-  useEffect(() => {
-    const saved = getSavedIndex(sourceId, filterId);
-    setIndex(saved < orderIds.length ? saved : 0);
-    alreadyTriggered.current = false;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceId, filterId]);
-
+  // Persist index whenever it changes
   useEffect(() => {
     setSavedIndex(sourceId, filterId, index);
   }, [sourceId, filterId, index]);
 
-  /**
-   * Walk forward from the current index and return the first character
-   * that hasn't been seen yet. If everything after the current index has
-   * been seen, walk from the beginning. If truly nothing is unseen, null.
-   */
-  const { current, next, resolvedIndex, allSeen } = useMemo(() => {
-    if (orderIds.length === 0) {
-      return { current: undefined, next: undefined, resolvedIndex: 0, allSeen: false };
-    }
-
-    let foundIdx = -1;
-    // Forward from current index
-    for (let i = index; i < orderIds.length; i++) {
-      if (!seenIds.has(orderIds[i])) {
-        foundIdx = i;
-        break;
-      }
-    }
-    // Wrap to start if nothing found forward
-    if (foundIdx === -1) {
-      for (let i = 0; i < index; i++) {
-        if (!seenIds.has(orderIds[i])) {
-          foundIdx = i;
-          break;
-        }
-      }
-    }
-
-    if (foundIdx === -1) {
-      return {
-        current: undefined,
-        next: undefined,
-        resolvedIndex: orderIds.length,
-        allSeen: true,
-      };
-    }
-
-    // Find the next unseen AFTER foundIdx (for the preview card)
-    let nextIdx = -1;
-    for (let i = foundIdx + 1; i < orderIds.length; i++) {
-      if (!seenIds.has(orderIds[i])) {
-        nextIdx = i;
-        break;
-      }
-    }
-
-    return {
-      current: charMap.get(orderIds[foundIdx]),
-      next: nextIdx !== -1 ? charMap.get(orderIds[nextIdx]) : undefined,
-      resolvedIndex: foundIdx,
-      allSeen: false,
-    };
-  }, [orderIds, seenIds, index, charMap]);
-
-  // Keep the stored index aligned with the resolved one
+  // Restore index when the filter changes
   useEffect(() => {
-    if (resolvedIndex !== index && !allSeen) {
-      setIndex(resolvedIndex);
-    }
-  }, [resolvedIndex, index, allSeen]);
+    const saved = getSavedIndex(sourceId, filterId);
+    setIndex(saved >= 0 ? saved : 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceId, filterId]);
 
-  const finished = allSeen || (orderIds.length > 0 && index >= orderIds.length);
+  // Clamp if the list shrinks
+  useEffect(() => {
+    if (index > characters.length && characters.length > 0) {
+      setIndex(characters.length);
+    }
+  }, [characters.length, index]);
+
+  const current = characters[index];
+  const next = characters[index + 1];
+  const finished = characters.length === 0 || index >= characters.length;
 
   // Preload
   useEffect(() => {
-    if (!current) return;
-    const currentIdx = orderIds.indexOf(current.id);
-    orderIds.slice(currentIdx + 1, currentIdx + 4).forEach((id) => {
-      const c = charMap.get(id);
-      if (c?.imageUrl) {
+    characters.slice(index + 1, index + 4).forEach((c) => {
+      if (c.imageUrl) {
         const img = new Image();
         img.src = c.imageUrl;
       }
     });
-  }, [orderIds, current, charMap]);
-
-  useEffect(() => {
-    if (finished && !exhausted && !alreadyTriggered.current) {
-      alreadyTriggered.current = true;
-      onExhausted();
-    }
-  }, [finished, exhausted, onExhausted]);
+  }, [characters, index]);
 
   const handleAction = useCallback(
     (actionId: string) => {
@@ -216,16 +86,16 @@ export default function GameScreen({
         actionId,
         timestamp: Date.now(),
       });
-      onMarkSeen(current.id);
-      setIndex(resolvedIndex + 1);
+      onMarkDisplayed(current.id);
+      setIndex((i) => i + 1);
     },
-    [current, sourceId, onMarkSeen, resolvedIndex]
+    [current, sourceId, onMarkDisplayed]
   );
 
   const handleSkip = useCallback(() => {
-    if (current) onMarkSeen(current.id);
-    setIndex(resolvedIndex + 1);
-  }, [current, onMarkSeen, resolvedIndex]);
+    if (current) onMarkDisplayed(current.id);
+    setIndex((i) => i + 1);
+  }, [current, onMarkDisplayed]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -246,39 +116,7 @@ export default function GameScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  if (finished && exhausted) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center px-6">
-        <motion.div
-          initial={{ opacity: 0, y: 12, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="flex flex-col items-center gap-5 text-center"
-        >
-          <motion.div
-            animate={{ scale: [1, 1.08, 1] }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-            className="flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/[0.03]"
-          >
-            <span className="text-2xl text-white/40">◌</span>
-          </motion.div>
-          <h2 className="font-display text-3xl leading-tight text-white">That's everyone</h2>
-          <p className="max-w-xs text-sm font-light text-white/40">
-            You've gone through the entire deck.
-          </p>
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={onBack}
-            className="mt-2 rounded-full border border-white/15 bg-white/[0.03] px-5 py-2 text-sm font-medium text-white transition hover:border-white/30 hover:bg-white/[0.07]"
-          >
-            Back to filters
-          </motion.button>
-        </motion.div>
-      </div>
-    );
-  }
-
+  // Refilling — App is loading more characters
   if (finished && !exhausted) {
     return (
       <div className="flex h-full flex-col px-4 pb-4 pt-3">
@@ -302,6 +140,42 @@ export default function GameScreen({
     );
   }
 
+  // Truly exhausted
+  if (finished && exhausted) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center px-6">
+        <motion.div
+          initial={{ opacity: 0, y: 12, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-col items-center gap-5 text-center"
+        >
+          <motion.div
+            animate={{ scale: [1, 1.08, 1] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+            className="flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/[0.03]"
+          >
+            <span className="text-2xl text-white/40">◌</span>
+          </motion.div>
+          <h2 className="font-display text-3xl leading-tight text-white">That's everyone</h2>
+          <p className="max-w-xs text-sm font-light text-white/40">
+            You've gone through everything.
+          </p>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={onBack}
+            className="mt-2 rounded-full border border-white/15 bg-white/[0.03] px-5 py-2 text-sm font-medium text-white transition hover:border-white/30 hover:bg-white/[0.07]"
+          >
+            Back to filters
+          </motion.button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (!current) return null;
+
   return (
     <div className="flex h-full flex-col px-4 pb-4 pt-3">
       <header className="flex items-center justify-between">
@@ -315,7 +189,7 @@ export default function GameScreen({
         <div className="text-center">
           <h1 className="font-display text-2xl leading-none tracking-tight text-white">AniMatch</h1>
           <p className="mt-1 text-[10px] font-light uppercase tracking-[0.25em] text-white/40">
-            {filterLabel} · {Math.min(resolvedIndex + 1, orderIds.length)}/{orderIds.length}
+            {filterLabel}
           </p>
         </div>
         <button
@@ -340,23 +214,21 @@ export default function GameScreen({
               <CharacterCard character={next} isTop={false} onAction={() => {}} onSkip={() => {}} />
             </motion.div>
           )}
-          {current && (
-            <motion.div
-              key={`top-${current.id}`}
-              className="absolute inset-0"
-              initial={{ scale: 0.94, y: 14, opacity: 0.7 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-            >
-              <CharacterCard
-                ref={cardRef}
-                character={current}
-                isTop
-                onAction={handleAction}
-                onSkip={handleSkip}
-              />
-            </motion.div>
-          )}
+          <motion.div
+            key={`top-${current.id}`}
+            className="absolute inset-0"
+            initial={{ scale: 0.94, y: 14, opacity: 0.7 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+          >
+            <CharacterCard
+              ref={cardRef}
+              character={current}
+              isTop
+              onAction={handleAction}
+              onSkip={handleSkip}
+            />
+          </motion.div>
         </div>
       </div>
 

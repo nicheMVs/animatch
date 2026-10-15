@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { RefreshCw, Sparkles } from 'lucide-react';
 import LandingScreen from './components/LandingScreen';
@@ -28,7 +28,7 @@ export default function App() {
 
   const [deck, setDeck] = useState<Character[]>([]);
   const [nextPage, setNextPage] = useState(1);
-  const [seenIds, setSeenIdsState] = useState<Set<number>>(() => getSeenIds(sourceId));
+  const [displayedIds, setDisplayedIdsState] = useState<Set<number>>(() => getSeenIds(sourceId));
   const [fetchedIds, setFetchedIds] = useState<Set<number>>(new Set());
   const [status, setStatus] = useState<DeckStatus>('loading');
   const [loadingMode, setLoadingMode] = useState<LoadingMode>('initial');
@@ -40,9 +40,9 @@ export default function App() {
 
   const source = getSource(sourceId);
 
-  const setSeenIds = useCallback(
+  const setDisplayedIds = useCallback(
     (updater: Set<number> | ((prev: Set<number>) => Set<number>)) => {
-      setSeenIdsState((prev) => {
+      setDisplayedIdsState((prev) => {
         const next = typeof updater === 'function' ? updater(prev) : updater;
         persistSeenIds(sourceId, next);
         return next;
@@ -130,29 +130,43 @@ export default function App() {
     setScreen('filter');
   }, [loadMore, sourceId]);
 
-  // Simple — the deck is just the filter applied. Seen tracking is GameScreen's job.
   const filteredDeck = useMemo(() => source.filter(deck, filter), [source, deck, filter]);
+
+  /** Characters not yet displayed. What the game screen pulls from. */
+  const availableDeck = useMemo(
+    () => filteredDeck.filter((c) => !displayedIds.has(c.id)),
+    [filteredDeck, displayedIds]
+  );
 
   const openHistory = (from: Screen) => {
     setHistoryReturn(from);
     setScreen('history');
   };
 
-  const handleDeckExhausted = useCallback(() => {
-    if (!exhausted) void loadMore('refill');
-  }, [loadMore, exhausted]);
-
-  const handleMarkSeen = useCallback(
+  const handleMarkDisplayed = useCallback(
     (characterId: number) => {
-      setSeenIds((prev) => {
+      setDisplayedIds((prev) => {
         if (prev.has(characterId)) return prev;
         const next = new Set(prev);
         next.add(characterId);
         return next;
       });
     },
-    [setSeenIds]
+    [setDisplayedIds]
   );
+
+  // Refill when the available deck runs empty
+  useEffect(() => {
+    if (
+      status === 'ready' &&
+      !exhausted &&
+      !fetching.current &&
+      availableDeck.length === 0 &&
+      deck.length > 0
+    ) {
+      void loadMore('refill');
+    }
+  }, [status, exhausted, availableDeck.length, deck.length, loadMore]);
 
   const renderGame = () => {
     if (status === 'loading') {
@@ -228,16 +242,14 @@ export default function App() {
     const filterLabel = source.filters.find((f) => f.id === filter)?.label ?? 'Everyone';
     return (
       <GameScreen
-        characters={filteredDeck}
-        seenIds={seenIds}
+        characters={availableDeck}
         filterLabel={filterLabel}
         filterId={filter}
         sourceId={sourceId}
         onBack={() => setScreen('filter')}
         onHistory={() => openHistory('game')}
-        onExhausted={handleDeckExhausted}
+        onMarkDisplayed={handleMarkDisplayed}
         exhausted={exhausted}
-        onMarkSeen={handleMarkSeen}
       />
     );
   };
