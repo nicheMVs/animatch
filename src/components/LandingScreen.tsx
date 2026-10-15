@@ -7,7 +7,12 @@ interface LandingScreenProps {
   onSelect: (filter: DeckFilter) => void;
 }
 
-const OPTIONS: { filter: DeckFilter; label: string; subtitle: string; icon: typeof Heart }[] = [
+const OPTIONS: {
+  filter: DeckFilter;
+  label: string;
+  subtitle?: string;
+  icon: typeof Heart;
+}[] = [
   { filter: 'waifus', label: 'Waifus', icon: Heart },
   { filter: 'husbandos', label: 'Husbandos', icon: Sword },
 ];
@@ -52,7 +57,9 @@ export default function LandingScreen({ onSelect }: LandingScreenProps) {
               </span>
               <span className="flex-1">
                 <span className="block text-[15px] font-medium text-white">{opt.label}</span>
-                <span className="block text-xs font-light text-white/40">{opt.subtitle}</span>
+                {opt.subtitle && (
+                  <span className="block text-xs font-light text-white/40">{opt.subtitle}</span>
+                )}
               </span>
               <span className="text-white/20 transition-all group-hover:translate-x-0.5 group-hover:text-white/50">
                 →
