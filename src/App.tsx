@@ -19,8 +19,8 @@ const sourceId = 'anilist' as const;
 interface FilterState {
   deck: Character[];
   nextPage: number;
-  seen: Set<number>;       // swiped in this filter
-  fetched: Set<number>;    // ever fetched in this filter
+  seen: Set<number>;
+  fetched: Set<number>;
   status: Status;
   error: string | null;
   exhausted: boolean;
@@ -83,7 +83,8 @@ export default function App() {
           return;
         }
 
-        const newDeck = mode === 'initial' ? result.characters : [...current.deck, ...result.characters];
+        const newDeck =
+          mode === 'initial' ? result.characters : [...current.deck, ...result.characters];
         const newFetched = new Set([...current.fetched, ...result.characters.map((c) => c.id)]);
 
         setState(f, (s) => ({
@@ -202,7 +203,6 @@ export default function App() {
         sourceId={sourceId}
         onBack={() => setScreen('filter')}
         onHistory={() => openHistory('game')}
-        seen={s.seen}
         onMarkSeen={(id) => {
           setState(filter, (state) => {
             if (state.seen.has(id)) return state;

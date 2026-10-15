@@ -15,7 +15,6 @@ interface GameScreenProps {
   sourceId: string;
   onBack: () => void;
   onHistory: () => void;
-  seen: Set<number>;
   onMarkSeen: (characterId: number) => void;
   onRefill: () => void;
   exhausted: boolean;
@@ -35,7 +34,6 @@ export default function GameScreen({
   sourceId,
   onBack,
   onHistory,
-  seen,
   onMarkSeen,
   onRefill,
   exhausted,
@@ -130,7 +128,7 @@ export default function GameScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Refilling — short, animated
+  // Refilling
   if (finished && !exhausted) {
     return (
       <div className="flex h-full flex-col px-4 pb-4 pt-3">
@@ -154,6 +152,7 @@ export default function GameScreen({
     );
   }
 
+  // Exhausted
   if (finished && exhausted) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6">
