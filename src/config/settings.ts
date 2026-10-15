@@ -6,6 +6,7 @@ export const SETTINGS = {
   DECK_CACHE_KEY: 'animatch_deck_cache',
   PROGRESS_KEY: 'animatch_progress',
   ORDER_KEY: 'animatch_order',
+  SEEN_KEY: 'animatch_seen',
   SWIPE_THRESHOLD_PX: 110,
   SWIPE_VELOCITY: 500,
 };

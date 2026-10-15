@@ -145,6 +145,25 @@ export function clearSavedOrder(sourceId: string, filter?: string): void {
   }
 }
 
+// ── Persistent "seen" set (cross-filter) ─────────────────
+
+export function getSeenIds(sourceId: string): Set<number> {
+  const value = readJson<number[] | null>(scopedKey(SETTINGS.SEEN_KEY, sourceId), null);
+  return Array.isArray(value) ? new Set(value) : new Set();
+}
+
+export function setSeenIds(sourceId: string, seen: Set<number>): void {
+  writeJson(scopedKey(SETTINGS.SEEN_KEY, sourceId), [...seen]);
+}
+
+export function clearSeenIds(sourceId: string): void {
+  try {
+    localStorage.removeItem(scopedKey(SETTINGS.SEEN_KEY, sourceId));
+  } catch {
+    /* ignore */
+  }
+}
+
 // ── Full reset ───────────────────────────────────────────
 
 export function clearAll(sourceId: string): void {
@@ -152,4 +171,5 @@ export function clearAll(sourceId: string): void {
   clearCachedDeck(sourceId);
   clearSavedIndex(sourceId);
   clearSavedOrder(sourceId);
+  clearSeenIds(sourceId);
 }

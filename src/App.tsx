@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { RefreshCw, Sparkles } from 'lucide-react';
 import LandingScreen from './components/LandingScreen';
@@ -7,7 +7,12 @@ import GameScreen from './components/GameScreen';
 import HistoryScreen from './components/HistoryScreen';
 import SkeletonCard from './components/SkeletonCard';
 import { getSource, type SourceId } from './sources';
-import { getCachedDeck, setCachedDeck } from './services/storage';
+import {
+  getCachedDeck,
+  getSeenIds,
+  setCachedDeck,
+  setSeenIds as persistSeenIds,
+} from './services/storage';
 import { SETTINGS } from './config/settings';
 import type { Character, DeckFilter } from './types/character';
 
@@ -23,8 +28,8 @@ export default function App() {
 
   const [deck, setDeck] = useState<Character[]>([]);
   const [nextPage, setNextPage] = useState(1);
-  /** Characters the user has already swiped on (any filter). */
-  const [seenIds, setSeenIds] = useState<Set<number>>(new Set());
+  /** Characters the user has already swiped on (any filter). Persisted. */
+  const [seenIds, setSeenIdsState] = useState<Set<number>>(() => getSeenIds(sourceId));
   /** Characters already fetched from the source (avoid duplicates on refill). */
   const [fetchedIds, setFetchedIds] = useState<Set<number>>(new Set());
   const [status, setStatus] = useState<DeckStatus>('loading');
@@ -37,6 +42,18 @@ export default function App() {
 
   const source = getSource(sourceId);
 
+  // Wrapper that keeps localStorage in sync whenever seenIds changes.
+  const setSeenIds = useCallback(
+    (updater: Set<number> | ((prev: Set<number>) => Set<number>)) => {
+      setSeenIdsState((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        persistSeenIds(sourceId, next);
+        return next;
+      });
+    },
+    [sourceId]
+  );
+
   const loadMore = useCallback(
     async (mode: LoadingMode) => {
       if (fetching.current) return;
@@ -47,7 +64,6 @@ export default function App() {
       setProgress({ loaded: 0, total: 0 });
 
       try {
-        // Exclude everything we've ever fetched so refill returns new characters
         const exclude = mode === 'initial' ? new Set<number>() : new Set(fetchedIds);
         const startPage = mode === 'initial' ? 1 : emptyRefills.current > 0 ? 0 : nextPage;
 
@@ -107,24 +123,16 @@ export default function App() {
       setDeck(cached.characters);
       setNextPage(cached.nextPage);
       setFetchedIds(new Set(cached.seenIds));
-      // seenIds starts empty — the user hasn't necessarily swiped on anything yet.
-      // We could persist per-character seen state, but for now start fresh.
-      setSeenIds(new Set());
       setStatus('ready');
     } else {
       setDeck([]);
       setNextPage(1);
       setFetchedIds(new Set());
-      setSeenIds(new Set());
       void loadMore('initial');
     }
     setScreen('filter');
   }, [loadMore, sourceId]);
 
-  /**
-   * The filtered deck excludes characters the user has already swiped on.
-   * This makes "Everyone" respect what's been seen in "Waifus" and "Husbandos".
-   */
   const filteredDeck = useMemo(() => {
     const base = source.filter(deck, filter);
     return base.filter((c) => !seenIds.has(c.id));
@@ -139,14 +147,17 @@ export default function App() {
     if (!exhausted) void loadMore('refill');
   }, [loadMore, exhausted]);
 
-  const handleMarkSeen = useCallback((characterId: number) => {
-    setSeenIds((prev) => {
-      if (prev.has(characterId)) return prev;
-      const next = new Set(prev);
-      next.add(characterId);
-      return next;
-    });
-  }, []);
+  const handleMarkSeen = useCallback(
+    (characterId: number) => {
+      setSeenIds((prev) => {
+        if (prev.has(characterId)) return prev;
+        const next = new Set(prev);
+        next.add(characterId);
+        return next;
+      });
+    },
+    [setSeenIds]
+  );
 
   const renderGame = () => {
     if (status === 'loading') {
