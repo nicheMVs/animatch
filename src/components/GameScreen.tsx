@@ -12,6 +12,7 @@ import {
 import type { Character, DeckFilter } from '../types/character';
 import ActionButton from './ActionButton';
 import CharacterCard, { type CharacterCardHandle } from './CharacterCard';
+import SkeletonCard from './SkeletonCard';
 
 interface GameScreenProps {
   characters: Character[];
@@ -40,39 +41,23 @@ function shuffleArray<T>(arr: T[]): T[] {
   return copy;
 }
 
-/**
- * Build (or restore) the shuffled order for this filter.
- * The order is saved to localStorage so it survives refreshes.
- * Only regenerated when the saved order no longer matches the character set.
- */
-function resolveOrder(
-  sourceId: string,
-  filterId: DeckFilter,
-  characters: Character[]
-): number[] {
+function resolveOrder(sourceId: string, filterId: DeckFilter, characters: Character[]): number[] {
   const currentIds = characters.map((c) => c.id);
   const currentSet = new Set(currentIds);
-
   const saved = getSavedOrder(sourceId, filterId);
 
   if (saved) {
-    // Keep only the IDs that still exist in the character set
     const valid = saved.filter((id) => currentSet.has(id));
-    // Any new IDs not already in the saved order get appended (shuffled)
     const savedSet = new Set(valid);
     const additions = shuffleArray(currentIds.filter((id) => !savedSet.has(id)));
 
-    // If nothing changed, return the saved order as-is
-    if (additions.length === 0 && valid.length === saved.length) {
-      return saved;
-    }
+    if (additions.length === 0 && valid.length === saved.length) return saved;
 
     const merged = [...valid, ...additions];
     setSavedOrder(sourceId, filterId, merged);
     return merged;
   }
 
-  // No saved order — shuffle once and save
   const shuffled = shuffleArray(currentIds);
   setSavedOrder(sourceId, filterId, shuffled);
   return shuffled;
@@ -100,7 +85,6 @@ export default function GameScreen({
   const lastKey = useRef<string>(`${sourceId}:${filterId}:${characters.length}`);
   const alreadyTriggered = useRef(false);
 
-  // Regenerate the order only if the character set actually changed
   useEffect(() => {
     const key = `${sourceId}:${filterId}:${characters.length}:${characters
       .slice(0, 5)
@@ -121,7 +105,6 @@ export default function GameScreen({
   });
   const cardRef = useRef<CharacterCardHandle>(null);
 
-  // Restore index when the filter changes
   useEffect(() => {
     const saved = getSavedIndex(sourceId, filterId);
     setIndex(saved < orderIds.length ? saved : 0);
@@ -132,12 +115,6 @@ export default function GameScreen({
   useEffect(() => {
     setSavedIndex(sourceId, filterId, index);
   }, [sourceId, filterId, index]);
-
-  useEffect(() => {
-    if (index >= orderIds.length && orderIds.length > 0) {
-      setIndex(Math.max(0, orderIds.length - 1));
-    }
-  }, [orderIds.length, index]);
 
   const current = charMap.get(orderIds[index]);
   const next = charMap.get(orderIds[index + 1]);
@@ -153,6 +130,7 @@ export default function GameScreen({
     });
   }, [orderIds, index, charMap]);
 
+  // Trigger refill whenever we run out (and the source isn't truly exhausted)
   useEffect(() => {
     if (finished && !exhausted && !alreadyTriggered.current) {
       alreadyTriggered.current = true;
@@ -196,6 +174,65 @@ export default function GameScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // ----- True empty state (source exhausted) -----
+  if (orderIds.length === 0 && exhausted) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center px-6">
+        <motion.div
+          initial={{ opacity: 0, y: 12, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-col items-center gap-5 text-center"
+        >
+          <motion.div
+            animate={{ scale: [1, 1.08, 1] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+            className="flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/[0.03]"
+          >
+            <span className="text-2xl text-white/40">◌</span>
+          </motion.div>
+          <h2 className="font-display text-3xl leading-tight text-white">That's everyone</h2>
+          <p className="max-w-xs text-sm font-light text-white/40">
+            You've gone through the entire deck.
+          </p>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={onBack}
+            className="mt-2 rounded-full border border-white/15 bg-white/[0.03] px-5 py-2 text-sm font-medium text-white transition hover:border-white/30 hover:bg-white/[0.07]"
+          >
+            Back to filters
+          </motion.button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ----- Refilling state (running low, waiting for new characters) -----
+  if (finished && !exhausted) {
+    return (
+      <div className="flex h-full flex-col px-4 pb-4 pt-3">
+        <header className="flex items-center justify-center">
+          <div>
+            <h1 className="font-display text-2xl leading-none tracking-tight text-white">
+              AniMatch
+            </h1>
+            <p className="mt-1 text-center text-[10px] font-light uppercase tracking-[0.25em] text-white/40">
+              Finding more…
+            </p>
+          </div>
+        </header>
+        <SkeletonCard />
+        <div className="flex items-start justify-center gap-5 opacity-30 sm:gap-7">
+          <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
+          <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
+          <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
+        </div>
+      </div>
+    );
+  }
+
+  // ----- Normal card view -----
   return (
     <div className="flex h-full flex-col px-4 pb-4 pt-3">
       <header className="flex items-center justify-between">
@@ -221,76 +258,61 @@ export default function GameScreen({
         </button>
       </header>
 
-      {orderIds.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-          <p className="text-3xl text-white/30">◌</p>
-          <p className="text-sm font-light text-white/50">No characters matched this deck.</p>
-          <button
-            onClick={onBack}
-            className="rounded-full border border-white/15 bg-white/[0.03] px-5 py-2 text-sm font-medium text-white transition hover:border-white/30 hover:bg-white/[0.07]"
-          >
-            Pick another deck
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="relative my-3 flex min-h-0 flex-1 items-center justify-center">
-            <div className="relative h-full max-h-[560px] w-full max-w-[380px]">
-              {next && (
-                <motion.div
-                  key={`back-${next.id}`}
-                  className="absolute inset-0"
-                  initial={{ scale: 0.88, y: 24, opacity: 0 }}
-                  animate={{ scale: 0.94, y: 14, opacity: 0.7 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <CharacterCard character={next} isTop={false} onAction={() => {}} onSkip={() => {}} />
-                </motion.div>
-              )}
-              {current && (
-                <motion.div
-                  key={`top-${current.id}`}
-                  className="absolute inset-0"
-                  initial={{ scale: 0.94, y: 14, opacity: 0.7 }}
-                  animate={{ scale: 1, y: 0, opacity: 1 }}
-                  transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-                >
-                  <CharacterCard
-                    ref={cardRef}
-                    character={current}
-                    isTop
-                    onAction={handleAction}
-                    onSkip={handleSkip}
-                  />
-                </motion.div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-start justify-center gap-5 sm:gap-7">
-            {ACTIONS_IN_BUTTON_ORDER.map((action) => (
-              <ActionButton
-                key={action.id}
-                action={action}
-                onClick={() => cardRef.current?.swipeAction(action.id)}
-              />
-            ))}
-          </div>
-
-          <div className="mt-3 flex flex-col items-center gap-1">
-            <motion.button
-              whileTap={{ scale: 0.92 }}
-              onClick={() => cardRef.current?.skip()}
-              className="flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-light uppercase tracking-[0.2em] text-white/40 transition hover:bg-white/[0.05] hover:text-white/80"
+      <div className="relative my-3 flex min-h-0 flex-1 items-center justify-center">
+        <div className="relative h-full max-h-[560px] w-full max-w-[380px]">
+          {next && (
+            <motion.div
+              key={`back-${next.id}`}
+              className="absolute inset-0"
+              initial={{ scale: 0.88, y: 24, opacity: 0 }}
+              animate={{ scale: 0.94, y: 14, opacity: 0.7 }}
+              transition={{ duration: 0.3 }}
             >
-              <SkipForward size={13} /> Skip
-            </motion.button>
-            <p className="hidden text-[10px] font-light uppercase tracking-[0.15em] text-white/25 sm:block">
-              Arrows to choose · S or Space to skip
-            </p>
-          </div>
-        </>
-      )}
+              <CharacterCard character={next} isTop={false} onAction={() => {}} onSkip={() => {}} />
+            </motion.div>
+          )}
+          {current && (
+            <motion.div
+              key={`top-${current.id}`}
+              className="absolute inset-0"
+              initial={{ scale: 0.94, y: 14, opacity: 0.7 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+            >
+              <CharacterCard
+                ref={cardRef}
+                character={current}
+                isTop
+                onAction={handleAction}
+                onSkip={handleSkip}
+              />
+            </motion.div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-start justify-center gap-5 sm:gap-7">
+        {ACTIONS_IN_BUTTON_ORDER.map((action) => (
+          <ActionButton
+            key={action.id}
+            action={action}
+            onClick={() => cardRef.current?.swipeAction(action.id)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-col items-center gap-1">
+        <motion.button
+          whileTap={{ scale: 0.92 }}
+          onClick={() => cardRef.current?.skip()}
+          className="flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-light uppercase tracking-[0.2em] text-white/40 transition hover:bg-white/[0.05] hover:text-white/80"
+        >
+          <SkipForward size={13} /> Skip
+        </motion.button>
+        <p className="hidden text-[10px] font-light uppercase tracking-[0.15em] text-white/25 sm:block">
+          Arrows to choose · S or Space to skip
+        </p>
+      </div>
     </div>
   );
 }

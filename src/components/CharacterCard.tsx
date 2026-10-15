@@ -7,7 +7,6 @@ import {
   type MotionValue,
   type PanInfo,
 } from 'framer-motion';
-import { Heart } from 'lucide-react';
 import { ACTIONS, getActionByDirection, type ActionConfig, type SwipeDirection } from '../config/actions';
 import { SETTINGS } from '../config/settings';
 import type { Character } from '../types/character';
@@ -105,6 +104,7 @@ const CharacterCard = forwardRef<CharacterCardHandle, CharacterCardProps>(functi
   const scale = useMotionValue(1);
   const busy = useRef(false);
   const [imageFailed, setImageFailed] = useState(false);
+  const [tintColor, setTintColor] = useState<string | null>(null);
 
   const rotate = useTransform(x, [-300, 0, 300], [-18, 0, 18]);
 
@@ -117,10 +117,14 @@ const CharacterCard = forwardRef<CharacterCardHandle, CharacterCardProps>(functi
   const flyOut = (action: ActionConfig) => {
     if (busy.current) return;
     busy.current = true;
-    const target = exitTarget(action.swipeDirection);
-    const opts = { duration: FLY_DURATION, ease: FLY_EASING };
-    animate(x, target.x, opts);
-    animate(y, target.y, opts).then(() => onAction(action.id));
+    // Show colored tint for a beat before flying off
+    setTintColor(action.color);
+    setTimeout(() => {
+      const target = exitTarget(action.swipeDirection);
+      const opts = { duration: FLY_DURATION, ease: FLY_EASING };
+      animate(x, target.x, opts);
+      animate(y, target.y, opts).then(() => onAction(action.id));
+    }, 160);
   };
 
   const skipOut = () => {
@@ -198,14 +202,22 @@ const CharacterCard = forwardRef<CharacterCardHandle, CharacterCardProps>(functi
         <PlaceholderImage name={character.name} />
       )}
 
+      {/* Action tint — washes the card in the action color before flying off */}
+      <motion.div
+        className="pointer-events-none absolute inset-0"
+        style={{ backgroundColor: tintColor ?? 'transparent' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: tintColor ? 0.45 : 0 }}
+        transition={{ duration: 0.15, ease: 'easeOut' }}
+      />
+
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/55 to-transparent px-6 pb-6 pt-24">
         <h2 className="font-display text-3xl leading-tight text-white drop-shadow-md sm:text-4xl">
           {character.name}
         </h2>
-        {character.favorites > 0 && (
-          <p className="mt-1.5 flex items-center gap-1.5 text-xs font-light tracking-wide text-white/60">
-            <Heart size={12} className="fill-rose-400 text-rose-400" strokeWidth={0} />
-            {character.favorites.toLocaleString()} fans
+        {character.anime && (
+          <p className="mt-1.5 text-xs font-light tracking-wide text-rose-300/80">
+            {character.anime}
           </p>
         )}
       </div>

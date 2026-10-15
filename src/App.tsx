@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Loader2, RefreshCw, Sparkles } from 'lucide-react';
+import { RefreshCw, Sparkles } from 'lucide-react';
 import LandingScreen from './components/LandingScreen';
 import FilterScreen from './components/FilterScreen';
 import GameScreen from './components/GameScreen';
 import HistoryScreen from './components/HistoryScreen';
+import SkeletonCard from './components/SkeletonCard';
 import { getSource, type SourceId } from './sources';
 import { getCachedDeck, setCachedDeck } from './services/storage';
 import { SETTINGS } from './config/settings';
@@ -29,6 +30,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [exhausted, setExhausted] = useState(false);
   const fetching = useRef(false);
+  // Track how many consecutive empty refills we've had
+  const emptyRefills = useRef(0);
 
   const source = getSource(sourceId);
 
@@ -40,21 +43,38 @@ export default function App() {
       setStatus('loading');
       setError(null);
       setProgress({ loaded: 0, total: 0 });
+
       try {
         const exclude = mode === 'initial' ? new Set<number>() : new Set(seenIds);
-        const startPage = mode === 'initial' ? 1 : nextPage;
+
+        // For a refill that keeps returning empty, use a fresh random page
+        const startPage =
+          mode === 'initial' ? 1 : emptyRefills.current > 0 ? 0 : nextPage;
+
         const result = await source.fetch(
           exclude,
           startPage,
           (loaded, total) => setProgress({ loaded, total }),
           SETTINGS.DECK_SIZE,
-          mode === 'initial'
+          mode === 'initial' || emptyRefills.current > 0
         );
+
         if (result.characters.length === 0) {
-          setExhausted(true);
-          setStatus('ready');
+          emptyRefills.current += 1;
+          if (emptyRefills.current >= 2) {
+            // Two empty refills in a row — actually exhausted
+            setExhausted(true);
+            setStatus('ready');
+          } else {
+            // Try again with a fresh random start
+            fetching.current = false;
+            void loadMore('refill');
+          }
           return;
         }
+
+        // Success — reset the empty counter
+        emptyRefills.current = 0;
 
         const newDeck = mode === 'initial' ? result.characters : [...deck, ...result.characters];
         const newSeen = new Set([...seenIds, ...result.characters.map((c) => c.id)]);
@@ -83,6 +103,7 @@ export default function App() {
     setFilter('both');
     setExhausted(false);
     setError(null);
+    emptyRefills.current = 0;
 
     const cached = getCachedDeck(sourceId);
     if (cached && cached.characters.length > 0) {
@@ -107,8 +128,8 @@ export default function App() {
   };
 
   const handleDeckExhausted = useCallback(() => {
-    void loadMore('refill');
-  }, [loadMore]);
+    if (!exhausted) void loadMore('refill');
+  }, [loadMore, exhausted]);
 
   const renderGame = () => {
     if (status === 'loading') {
@@ -119,9 +140,9 @@ export default function App() {
               animate={{ rotate: 360 }}
               transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
             >
-              <Sparkles size={44} className="text-rose-300" strokeWidth={1.2} />
+              <Sparkles size={40} className="text-rose-300" strokeWidth={1.2} />
             </motion.div>
-            <p className="font-display text-2xl text-white">Finding more characters…</p>
+            <p className="font-display text-2xl text-white">Finding more…</p>
             <p className="text-xs font-light uppercase tracking-[0.2em] text-white/40">
               Refilling your deck
             </p>
@@ -137,19 +158,23 @@ export default function App() {
         );
       }
       return (
-        <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-          <Loader2 size={40} className="animate-spin text-rose-300" strokeWidth={1.5} />
-          <p className="text-sm font-light uppercase tracking-[0.2em] text-white/40">
-            Loading characters
-          </p>
-          {progress.total > 0 && (
-            <div className="mt-2 h-[3px] w-48 overflow-hidden rounded-full bg-white/[0.06]">
-              <div
-                className="h-full rounded-full bg-rose-300/80 transition-all duration-300"
-                style={{ width: `${(progress.loaded / progress.total) * 100}%` }}
-              />
+        <div className="flex h-full flex-col px-4 pb-4 pt-3">
+          <header className="flex items-center justify-center">
+            <div>
+              <h1 className="font-display text-2xl leading-none tracking-tight text-white">
+                AniMatch
+              </h1>
+              <p className="mt-1 text-center text-[10px] font-light uppercase tracking-[0.25em] text-white/40">
+                Loading
+              </p>
             </div>
-          )}
+          </header>
+          <SkeletonCard />
+          <div className="flex items-start justify-center gap-5 opacity-30 sm:gap-7">
+            <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
+            <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
+            <div className="h-16 w-16 rounded-full border border-white/10 bg-white/[0.03]" />
+          </div>
         </div>
       );
     }
@@ -160,7 +185,10 @@ export default function App() {
           <p className="font-display text-2xl text-white">Couldn't load characters</p>
           <p className="max-w-xs text-xs font-light text-white/40">{error}</p>
           <button
-            onClick={() => loadMore(deck.length === 0 ? 'initial' : 'refill')}
+            onClick={() => {
+              emptyRefills.current = 0;
+              loadMore(deck.length === 0 ? 'initial' : 'refill');
+            }}
             className="mt-2 flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.03] px-5 py-2 text-sm font-medium text-white transition hover:border-white/30 hover:bg-white/[0.07]"
           >
             <RefreshCw size={14} /> Try again

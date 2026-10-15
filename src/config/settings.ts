@@ -1,5 +1,5 @@
 export const SETTINGS = {
-  DECK_SIZE: 500,
+  DECK_SIZE: 15,
   ANILIST_BASE_URL: 'https://graphql.anilist.co',
   ANILIST_REQUEST_DELAY_MS: 700,
   STORAGE_KEY: 'animatch_history',

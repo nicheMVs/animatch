@@ -6,6 +6,10 @@ const QUERY = `
   query ($page: Int, $perPage: Int) {
     Page(page: $page, perPage: $perPage) {
       media(type: ANIME, sort: POPULARITY_DESC) {
+        title {
+          romaji
+          english
+        }
         characters(sort: ROLE, perPage: 25) {
           edges {
             node {
@@ -34,6 +38,7 @@ interface AniListResponse {
   data?: {
     Page?: {
       media?: Array<{
+        title?: { romaji?: string | null; english?: string | null };
         characters?: {
           edges?: Array<{ node?: AniListCharacter }>;
         };
@@ -46,7 +51,7 @@ interface AniListResponse {
 const PER_PAGE = 25;
 const MAX_START_PAGE = 60;
 
-async function fetchPage(page: number): Promise<AniListCharacter[]> {
+async function fetchPage(page: number): Promise<Array<{ character: AniListCharacter; anime: string | null }>> {
   const response = await fetch(SETTINGS.ANILIST_BASE_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -59,22 +64,24 @@ async function fetchPage(page: number): Promise<AniListCharacter[]> {
   if (json.errors && json.errors.length > 0) throw new Error(json.errors[0].message);
 
   const media = json.data?.Page?.media ?? [];
-  const chars: AniListCharacter[] = [];
+  const rows: Array<{ character: AniListCharacter; anime: string | null }> = [];
   for (const m of media) {
+    const animeTitle = m.title?.english || m.title?.romaji || null;
     for (const edge of m.characters?.edges ?? []) {
-      if (edge.node) chars.push(edge.node);
+      if (edge.node) rows.push({ character: edge.node, anime: animeTitle });
     }
   }
-  return chars;
+  return rows;
 }
 
-function toCharacter(a: AniListCharacter): Character {
+function toCharacter(row: { character: AniListCharacter; anime: string | null }): Character {
+  const a = row.character;
   return {
     id: a.id,
     name: a.name.full,
+    anime: row.anime,
     imageUrl: a.image.large || a.image.medium || null,
     gender: a.gender,
-    favorites: a.favourites ?? 0,
   };
 }
 
@@ -92,7 +99,7 @@ async function fetchAnilistCharacters(
   let exhausted = false;
 
   for (let i = 0; i < pagesToScan; i++) {
-    let batch: AniListCharacter[];
+    let batch: Array<{ character: AniListCharacter; anime: string | null }>;
     try {
       batch = await fetchPage(currentPage);
     } catch (err) {
@@ -109,10 +116,10 @@ async function fetchAnilistCharacters(
       break;
     }
 
-    for (const a of batch) {
-      if (seen.has(a.id)) continue;
-      seen.add(a.id);
-      collected.push(toCharacter(a));
+    for (const row of batch) {
+      if (seen.has(row.character.id)) continue;
+      seen.add(row.character.id);
+      collected.push(toCharacter(row));
       if (collected.length >= target) break;
     }
 

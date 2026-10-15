@@ -3,7 +3,7 @@ export type DeckFilter = 'waifus' | 'husbandos' | 'both';
 export interface Character {
   id: number;
   name: string;
+  anime: string | null;
   imageUrl: string | null;
   gender: string | null;
-  favorites: number;
 }
