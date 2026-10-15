@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, History, SkipForward } from 'lucide-react';
 import { ACTIONS_IN_BUTTON_ORDER, getActionByDirection, type SwipeDirection } from '../config/actions';
@@ -15,7 +15,9 @@ interface GameScreenProps {
   sourceId: string;
   onBack: () => void;
   onHistory: () => void;
-  onMarkDisplayed: (characterId: number) => void;
+  seen: Set<number>;
+  onMarkSeen: (characterId: number) => void;
+  onRefill: () => void;
   exhausted: boolean;
 }
 
@@ -26,15 +28,6 @@ const KEY_TO_DIRECTION: Record<string, SwipeDirection> = {
   ArrowDown: 'down',
 };
 
-function shuffleArray<T>(arr: T[]): T[] {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
-
 export default function GameScreen({
   characters,
   filterLabel,
@@ -42,28 +35,37 @@ export default function GameScreen({
   sourceId,
   onBack,
   onHistory,
-  onMarkDisplayed,
+  seen,
+  onMarkSeen,
+  onRefill,
   exhausted,
 }: GameScreenProps) {
-  // Snapshot the shuffled order for this session. Never recompute mid-session.
-  const [order] = useState<Character[]>(() => shuffleArray(characters));
+  // Snapshot a shuffled copy once. Never recomputed.
+  const order = useMemo(() => {
+    const copy = [...characters];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [characters.length, characters[0]?.id ?? 0]);
 
-  // Persistent per-filter index into the snapshot.
   const [index, setIndex] = useState<number>(() => {
     const saved = getSavedIndex(sourceId, filterId);
     return saved >= 0 && saved < order.length ? saved : 0;
   });
   const cardRef = useRef<CharacterCardHandle>(null);
+  const refillTriggered = useRef(false);
 
-  // Persist index on change
   useEffect(() => {
     setSavedIndex(sourceId, filterId, index);
   }, [sourceId, filterId, index]);
 
-  // Restore index when the filter changes
   useEffect(() => {
     const saved = getSavedIndex(sourceId, filterId);
     setIndex(saved >= 0 && saved < order.length ? saved : 0);
+    refillTriggered.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceId, filterId]);
 
@@ -71,7 +73,6 @@ export default function GameScreen({
   const next = order[index + 1];
   const finished = order.length === 0 || index >= order.length;
 
-  // Preload
   useEffect(() => {
     order.slice(index + 1, index + 4).forEach((c) => {
       if (c.imageUrl) {
@@ -80,6 +81,14 @@ export default function GameScreen({
       }
     });
   }, [order, index]);
+
+  // Trigger refill when the queue is exhausted
+  useEffect(() => {
+    if (finished && !exhausted && !refillTriggered.current) {
+      refillTriggered.current = true;
+      onRefill();
+    }
+  }, [finished, exhausted, onRefill]);
 
   const handleAction = useCallback(
     (actionId: string) => {
@@ -91,16 +100,16 @@ export default function GameScreen({
         actionId,
         timestamp: Date.now(),
       });
-      onMarkDisplayed(current.id);
+      onMarkSeen(current.id);
       setIndex((i) => i + 1);
     },
-    [current, sourceId, onMarkDisplayed]
+    [current, sourceId, onMarkSeen]
   );
 
   const handleSkip = useCallback(() => {
-    if (current) onMarkDisplayed(current.id);
+    if (current) onMarkSeen(current.id);
     setIndex((i) => i + 1);
-  }, [current, onMarkDisplayed]);
+  }, [current, onMarkSeen]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -121,7 +130,7 @@ export default function GameScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Refilling — App is loading more
+  // Refilling — short, animated
   if (finished && !exhausted) {
     return (
       <div className="flex h-full flex-col px-4 pb-4 pt-3">
@@ -145,7 +154,6 @@ export default function GameScreen({
     );
   }
 
-  // Truly exhausted
   if (finished && exhausted) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6">
@@ -187,7 +195,7 @@ export default function GameScreen({
         <button
           onClick={onBack}
           className="rounded-full p-2 text-white/60 transition hover:bg-white/[0.06] hover:text-white"
-          aria-label="Back to deck selection"
+          aria-label="Back"
         >
           <ArrowLeft size={20} />
         </button>

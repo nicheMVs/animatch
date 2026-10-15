@@ -1,205 +1,152 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { RefreshCw, Sparkles } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import LandingScreen from './components/LandingScreen';
 import FilterScreen from './components/FilterScreen';
 import GameScreen from './components/GameScreen';
 import HistoryScreen from './components/HistoryScreen';
 import SkeletonCard from './components/SkeletonCard';
-import { getSource, type SourceId } from './sources';
-import {
-  getCachedDeck,
-  getSeenIds,
-  setCachedDeck,
-  setSeenIds as persistSeenIds,
-} from './services/storage';
+import { getSource } from './sources';
+import { getCachedDeck, setCachedDeck } from './services/storage';
 import { SETTINGS } from './config/settings';
 import type { Character, DeckFilter } from './types/character';
 
 type Screen = 'landing' | 'filter' | 'game' | 'history';
-type DeckStatus = 'loading' | 'ready' | 'error';
-type LoadingMode = 'initial' | 'refill';
+type Status = 'loading' | 'ready' | 'error';
+
+const sourceId = 'anilist' as const;
+
+interface FilterState {
+  deck: Character[];
+  nextPage: number;
+  seen: Set<number>;       // swiped in this filter
+  fetched: Set<number>;    // ever fetched in this filter
+  status: Status;
+  error: string | null;
+  exhausted: boolean;
+}
+
+const emptyFilterState = (): FilterState => ({
+  deck: [],
+  nextPage: 1,
+  seen: new Set(),
+  fetched: new Set(),
+  status: 'loading',
+  error: null,
+  exhausted: false,
+});
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('landing');
   const [historyReturn, setHistoryReturn] = useState<Screen>('filter');
-  const sourceId: SourceId = 'anilist';
-  const [filter, setFilter] = useState<DeckFilter>('both');
+  const [filter, setFilter] = useState<DeckFilter>('waifus');
 
-  const [deck, setDeck] = useState<Character[]>([]);
-  const [nextPage, setNextPage] = useState(1);
-  const [displayedIds, setDisplayedIdsState] = useState<Set<number>>(() => getSeenIds(sourceId));
-  const [fetchedIds, setFetchedIds] = useState<Set<number>>(new Set());
-  const [status, setStatus] = useState<DeckStatus>('loading');
-  const [loadingMode, setLoadingMode] = useState<LoadingMode>('initial');
-  const [progress, setProgress] = useState({ loaded: 0, total: 0 });
-  const [error, setError] = useState<string | null>(null);
-  const [exhausted, setExhausted] = useState(false);
-  const fetching = useRef(false);
-  const emptyRefills = useRef(0);
+  const [waifus, setWaifus] = useState<FilterState>(emptyFilterState);
+  const [husbandos, setHusbandos] = useState<FilterState>(emptyFilterState);
 
   const source = getSource(sourceId);
 
-  const setDisplayedIds = useCallback(
-    (updater: Set<number> | ((prev: Set<number>) => Set<number>)) => {
-      setDisplayedIdsState((prev) => {
-        const next = typeof updater === 'function' ? updater(prev) : updater;
-        persistSeenIds(sourceId, next);
-        return next;
-      });
-    },
-    [sourceId]
-  );
+  const getState = (f: DeckFilter) => (f === 'waifus' ? waifus : husbandos);
+  const setState = (f: DeckFilter, updater: (s: FilterState) => FilterState) => {
+    if (f === 'waifus') setWaifus(updater);
+    else setHusbandos(updater);
+  };
+
+  const fetching = useRef<Record<DeckFilter, boolean>>({
+    waifus: false,
+    husbandos: false,
+  });
 
   const loadMore = useCallback(
-    async (mode: LoadingMode) => {
-      if (fetching.current) return;
-      fetching.current = true;
-      setLoadingMode(mode);
-      setStatus('loading');
-      setError(null);
-      setProgress({ loaded: 0, total: 0 });
+    async (f: DeckFilter, mode: 'initial' | 'refill') => {
+      if (fetching.current[f]) return;
+      fetching.current[f] = true;
+
+      const current = getState(f);
+      setState(f, (s) => ({ ...s, status: 'loading', error: null }));
 
       try {
-        const exclude = mode === 'initial' ? new Set<number>() : new Set(fetchedIds);
-        const startPage = mode === 'initial' ? 1 : emptyRefills.current > 0 ? 0 : nextPage;
+        const exclude = mode === 'initial' ? new Set<number>() : new Set(current.fetched);
+        const startPage = mode === 'initial' ? 1 : current.nextPage;
 
         const result = await source.fetch(
+          f,
           exclude,
           startPage,
-          (loaded, total) => setProgress({ loaded, total }),
+          undefined,
           SETTINGS.DECK_SIZE,
-          mode === 'initial' || emptyRefills.current > 0
+          mode === 'initial'
         );
 
         if (result.characters.length === 0) {
-          emptyRefills.current += 1;
-          if (emptyRefills.current >= 2) {
-            setExhausted(true);
-            setStatus('ready');
-          } else {
-            fetching.current = false;
-            void loadMore('refill');
-          }
+          setState(f, (s) => ({ ...s, status: 'ready', exhausted: true }));
           return;
         }
 
-        emptyRefills.current = 0;
+        const newDeck = mode === 'initial' ? result.characters : [...current.deck, ...result.characters];
+        const newFetched = new Set([...current.fetched, ...result.characters.map((c) => c.id)]);
 
-        const newDeck = mode === 'initial' ? result.characters : [...deck, ...result.characters];
-        const newFetched = new Set([...fetchedIds, ...result.characters.map((c) => c.id)]);
+        setState(f, (s) => ({
+          ...s,
+          deck: newDeck,
+          nextPage: result.nextPage,
+          fetched: newFetched,
+          status: 'ready',
+          exhausted: false,
+        }));
 
-        setDeck(newDeck);
-        setFetchedIds(newFetched);
-        setNextPage(result.nextPage);
-        setCachedDeck(sourceId, {
+        setCachedDeck(`${sourceId}__${f}`, {
           characters: newDeck,
           nextPage: result.nextPage,
           seenIds: [...newFetched],
           order: newDeck.map((c) => c.id),
         });
-        setStatus('ready');
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-        setStatus('error');
+        setState(f, (s) => ({
+          ...s,
+          status: 'error',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }));
       } finally {
-        fetching.current = false;
+        fetching.current[f] = false;
       }
     },
-    [deck, nextPage, fetchedIds, source, sourceId]
+    [source]
   );
 
-  const enterMatch = useCallback(() => {
-    setFilter('both');
-    setExhausted(false);
-    setError(null);
-    emptyRefills.current = 0;
+  const enterMatch = useCallback(
+    (f: DeckFilter) => {
+      setFilter(f);
+      const cached = getCachedDeck(`${sourceId}__${f}`);
 
-    const cached = getCachedDeck(sourceId);
-    if (cached && cached.characters.length > 0) {
-      setDeck(cached.characters);
-      setNextPage(cached.nextPage);
-      setFetchedIds(new Set(cached.seenIds));
-      setStatus('ready');
-    } else {
-      setDeck([]);
-      setNextPage(1);
-      setFetchedIds(new Set());
-      void loadMore('initial');
-    }
-    setScreen('filter');
-  }, [loadMore, sourceId]);
-
-  /**
-   * The full filtered deck. NO exclusion of displayedIds.
-   * GameScreen snapshots its own shuffled order from this and handles
-   * cross-filter skipping internally.
-   */
-  const filteredDeck = useMemo(() => {
-    const base = source.filter(deck, filter);
-    // Only exclude displayed characters ONCE, at filter build time.
-    // This is the snapshot GameScreen inherits.
-    return base.filter((c) => !displayedIds.has(c.id));
-    // Intentionally NOT depending on displayedIds to avoid mid-session rebuild.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, deck, filter]);
+      if (cached && cached.characters.length > 0) {
+        setState(f, () => ({
+          deck: cached.characters,
+          nextPage: cached.nextPage,
+          seen: new Set(),
+          fetched: new Set(cached.seenIds),
+          status: 'ready',
+          error: null,
+          exhausted: false,
+        }));
+      } else {
+        setState(f, () => emptyFilterState());
+        void loadMore(f, 'initial');
+      }
+      setScreen('game');
+    },
+    [loadMore]
+  );
 
   const openHistory = (from: Screen) => {
     setHistoryReturn(from);
     setScreen('history');
   };
 
-  const handleMarkDisplayed = useCallback(
-    (characterId: number) => {
-      setDisplayedIds((prev) => {
-        if (prev.has(characterId)) return prev;
-        const next = new Set(prev);
-        next.add(characterId);
-        return next;
-      });
-    },
-    [setDisplayedIds]
-  );
-
-  // Refill when the filtered deck runs out of fresh characters
-  useEffect(() => {
-    if (
-      status === 'ready' &&
-      !exhausted &&
-      !fetching.current &&
-      filteredDeck.length === 0 &&
-      deck.length > 0
-    ) {
-      void loadMore('refill');
-    }
-  }, [status, exhausted, filteredDeck.length, deck.length, loadMore]);
-
   const renderGame = () => {
-    if (status === 'loading') {
-      if (loadingMode === 'refill') {
-        return (
-          <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-            >
-              <Sparkles size={40} className="text-rose-300" strokeWidth={1.2} />
-            </motion.div>
-            <p className="font-display text-2xl text-white">Finding more…</p>
-            <p className="text-xs font-light uppercase tracking-[0.2em] text-white/40">
-              Refilling your deck
-            </p>
-            {progress.total > 0 && (
-              <div className="mt-2 h-[3px] w-48 overflow-hidden rounded-full bg-white/[0.06]">
-                <div
-                  className="h-full rounded-full bg-rose-300/80 transition-all duration-300"
-                  style={{ width: `${(progress.loaded / progress.total) * 100}%` }}
-                />
-              </div>
-            )}
-          </div>
-        );
-      }
+    const s = getState(filter);
+
+    if (s.status === 'loading' && s.deck.length === 0) {
       return (
         <div className="flex h-full flex-col px-4 pb-4 pt-3">
           <header className="flex items-center justify-center">
@@ -221,17 +168,15 @@ export default function App() {
         </div>
       );
     }
-    if (status === 'error') {
+
+    if (s.status === 'error') {
       return (
         <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="text-4xl">◌</p>
           <p className="font-display text-2xl text-white">Couldn't load characters</p>
-          <p className="max-w-xs text-xs font-light text-white/40">{error}</p>
+          <p className="max-w-xs text-xs font-light text-white/40">{s.error}</p>
           <button
-            onClick={() => {
-              emptyRefills.current = 0;
-              loadMore(deck.length === 0 ? 'initial' : 'refill');
-            }}
+            onClick={() => loadMore(filter, s.deck.length === 0 ? 'initial' : 'refill')}
             className="mt-2 flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.03] px-5 py-2 text-sm font-medium text-white transition hover:border-white/30 hover:bg-white/[0.07]"
           >
             <RefreshCw size={14} /> Try again
@@ -245,18 +190,29 @@ export default function App() {
         </div>
       );
     }
-    const filterLabel = source.filters.find((f) => f.id === filter)?.label ?? 'Everyone';
+
+    const filterLabel = source.filters.find((x) => x.id === filter)?.label ?? '';
+
     return (
       <GameScreen
-        key={`${filterIdKey(sourceId, filter)}-${filteredDeck.length}`}
-        characters={filteredDeck}
-        filterLabel={filterLabel}
+        key={filter}
+        characters={s.deck}
         filterId={filter}
+        filterLabel={filterLabel}
         sourceId={sourceId}
         onBack={() => setScreen('filter')}
         onHistory={() => openHistory('game')}
-        onMarkDisplayed={handleMarkDisplayed}
-        exhausted={exhausted}
+        seen={s.seen}
+        onMarkSeen={(id) => {
+          setState(filter, (state) => {
+            if (state.seen.has(id)) return state;
+            const next = new Set(state.seen);
+            next.add(id);
+            return { ...state, seen: next };
+          });
+        }}
+        onRefill={() => loadMore(filter, 'refill')}
+        exhausted={s.exhausted}
       />
     );
   };
@@ -272,22 +228,14 @@ export default function App() {
           exit={{ opacity: 0, y: -12 }}
           transition={{ duration: 0.2 }}
         >
-          {screen === 'landing' && <LandingScreen onEnter={enterMatch} />}
+          {screen === 'landing' && <LandingScreen onEnter={() => setScreen('filter')} />}
           {screen === 'filter' && (
             <FilterScreen
               sourceName={source.name}
               sourceFilters={source.filters}
-              onSelect={(f) => {
-                setFilter(f);
-                setScreen('game');
-              }}
+              onSelect={(f) => enterMatch(f)}
               onHistory={() => openHistory('filter')}
               onBack={() => setScreen('landing')}
-              loadingHint={
-                status === 'loading' && progress.total > 0
-                  ? `Fetching characters… ${progress.loaded}/${progress.total}`
-                  : null
-              }
             />
           )}
           {screen === 'game' && renderGame()}
@@ -298,8 +246,4 @@ export default function App() {
       </AnimatePresence>
     </div>
   );
-}
-
-function filterIdKey(sourceId: string, filter: string) {
-  return `${sourceId}:${filter}`;
 }

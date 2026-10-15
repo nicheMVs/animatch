@@ -1,4 +1,4 @@
-export type DeckFilter = 'waifus' | 'husbandos' | 'both';
+export type DeckFilter = 'waifus' | 'husbandos';
 
 export interface Character {
   id: number;

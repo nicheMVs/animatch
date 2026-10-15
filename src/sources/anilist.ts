@@ -6,10 +6,7 @@ const QUERY = `
   query ($page: Int, $perPage: Int) {
     Page(page: $page, perPage: $perPage) {
       media(type: ANIME, sort: POPULARITY_DESC) {
-        title {
-          romaji
-          english
-        }
+        title { romaji english }
         characters(sort: ROLE, perPage: 25) {
           edges {
             node {
@@ -39,9 +36,7 @@ interface AniListResponse {
     Page?: {
       media?: Array<{
         title?: { romaji?: string | null; english?: string | null };
-        characters?: {
-          edges?: Array<{ node?: AniListCharacter }>;
-        };
+        characters?: { edges?: Array<{ node?: AniListCharacter }> };
       }>;
     };
   };
@@ -51,15 +46,15 @@ interface AniListResponse {
 const PER_PAGE = 25;
 const MAX_START_PAGE = 60;
 
-async function fetchPage(page: number): Promise<Array<{ character: AniListCharacter; anime: string | null }>> {
+async function fetchPage(
+  page: number
+): Promise<Array<{ character: AniListCharacter; anime: string | null }>> {
   const response = await fetch(SETTINGS.ANILIST_BASE_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ query: QUERY, variables: { page, perPage: PER_PAGE } }),
   });
-
   if (!response.ok) throw new Error(`AniList request failed (${response.status})`);
-
   const json: AniListResponse = await response.json();
   if (json.errors && json.errors.length > 0) throw new Error(json.errors[0].message);
 
@@ -86,6 +81,7 @@ function toCharacter(row: { character: AniListCharacter; anime: string | null })
 }
 
 async function fetchAnilistCharacters(
+  filter: DeckFilter,
   excludeIds: Set<number> = new Set(),
   startPage = 1,
   onProgress?: (loaded: number, total: number) => void,
@@ -94,7 +90,8 @@ async function fetchAnilistCharacters(
 ) {
   const collected: Character[] = [];
   const seen = new Set<number>(excludeIds);
-  const pagesToScan = Math.ceil(target / PER_PAGE) + 10;
+  const wantedGender = filter === 'waifus' ? 'female' : 'male';
+  const pagesToScan = Math.ceil(target / PER_PAGE) + 30;
   let currentPage = randomStart ? Math.floor(Math.random() * MAX_START_PAGE) + 1 : startPage;
   let exhausted = false;
 
@@ -117,6 +114,8 @@ async function fetchAnilistCharacters(
     }
 
     for (const row of batch) {
+      const g = (row.character.gender || '').toLowerCase();
+      if (g !== wantedGender) continue;
       if (seen.has(row.character.id)) continue;
       seen.add(row.character.id);
       collected.push(toCharacter(row));
@@ -125,7 +124,6 @@ async function fetchAnilistCharacters(
 
     onProgress?.(Math.min(collected.length, target), target);
     currentPage += 1;
-
     if (collected.length >= target) break;
     await new Promise((r) => setTimeout(r, SETTINGS.ANILIST_REQUEST_DELAY_MS));
   }
@@ -139,7 +137,6 @@ async function fetchAnilistCharacters(
 }
 
 function filterAnilist(deck: Character[], filter: DeckFilter): Character[] {
-  if (filter === 'both') return deck;
   const target = filter === 'waifus' ? 'female' : 'male';
   return deck.filter((c) => (c.gender || '').toLowerCase() === target);
 }
@@ -151,7 +148,6 @@ export const anilistSource: SourceDefinition = {
   filters: [
     { id: 'waifus', label: 'Waifus', subtitle: 'She / her' },
     { id: 'husbandos', label: 'Husbandos', subtitle: 'He / him' },
-    { id: 'both', label: 'Everyone', subtitle: 'No filter' },
   ],
   fetch: fetchAnilistCharacters,
   filter: filterAnilist,
