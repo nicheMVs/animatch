@@ -206,10 +206,7 @@ export default function App() {
         >
           {screen === 'landing' && (
             <LandingScreen
-              onSelect={(src) => {
-                if (src === 'anilist') enterSource('anilist');
-                // gelbooru still disabled
-              }}
+              onSelect={(src) => enterSource(src as SourceId)}
             />
           )}
           {screen === 'filter' && (
