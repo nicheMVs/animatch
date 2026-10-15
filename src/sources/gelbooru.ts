@@ -1,5 +1,5 @@
 import type { Character, DeckFilter } from '../types/character';
-import type { SourceDefinition } from './types';
+import type { SourceDefinition, FetchResult } from './types';
 
 async function fetchGelbooruCharacters(
   _excludeIds: Set<number> = new Set(),
@@ -7,7 +7,7 @@ async function fetchGelbooruCharacters(
   _onProgress?: (loaded: number, total: number) => void,
   _target = 100,
   _randomStart = false
-) {
+): Promise<FetchResult> {
   // Placeholder — the real fetch is wired up in the next step.
   throw new Error('BooruMatch is not yet available.');
 }
