@@ -104,7 +104,6 @@ const CharacterCard = forwardRef<CharacterCardHandle, CharacterCardProps>(functi
   const scale = useMotionValue(1);
   const busy = useRef(false);
   const [imageFailed, setImageFailed] = useState(false);
-  const [imageReady, setImageReady] = useState(false);
 
   const rotate = useTransform(x, [-300, 0, 300], [-18, 0, 18]);
 
@@ -187,29 +186,13 @@ const CharacterCard = forwardRef<CharacterCardHandle, CharacterCardProps>(functi
       onDragEnd={handleDragEnd}
     >
       {showImage ? (
-        <div className="relative h-full w-full overflow-hidden">
-          {/* The image itself: starts slightly zoomed. Animates to normal once loaded. */}
-          <motion.img
-            key={character.id}
-            src={character.imageUrl!}
-            alt={character.name}
-            draggable={false}
-            onError={() => setImageFailed(true)}
-            onLoad={() => setImageReady(true)}
-            initial={{ scale: 1.04 }}
-            animate={{ scale: imageReady ? 1 : 1.04 }}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            className="h-full w-full object-cover"
-          />
-          {/* Overlay cover: covers the image while loading, then fades out.
-              This masks the browser's "flash" of the freshly painted image. */}
-          <motion.div
-            initial={{ opacity: 1 }}
-            animate={{ opacity: imageReady ? 0 : 1 }}
-            transition={{ duration: 0.35, ease: 'easeOut' }}
-            className="pointer-events-none absolute inset-0 bg-[#131219]"
-          />
-        </div>
+        <img
+          src={character.imageUrl!}
+          alt={character.name}
+          draggable={false}
+          onError={() => setImageFailed(true)}
+          className="h-full w-full object-cover"
+        />
       ) : (
         <PlaceholderImage name={character.name} />
       )}
