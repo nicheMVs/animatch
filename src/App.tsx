@@ -6,7 +6,7 @@ import FilterScreen from './components/FilterScreen';
 import GameScreen from './components/GameScreen';
 import HistoryScreen from './components/HistoryScreen';
 import { getSource, type SourceId } from './sources';
-import { clearAll, getCachedDeck, setCachedDeck } from './services/storage';
+import { getCachedDeck, setCachedDeck } from './services/storage';
 import { SETTINGS } from './config/settings';
 import type { Character, DeckFilter } from './types/character';
 
@@ -17,7 +17,7 @@ type LoadingMode = 'initial' | 'refill';
 export default function App() {
   const [screen, setScreen] = useState<Screen>('landing');
   const [historyReturn, setHistoryReturn] = useState<Screen>('filter');
-  const [sourceId, setSourceId] = useState<SourceId>('anilist');
+  const sourceId: SourceId = 'anilist';
   const [filter, setFilter] = useState<DeckFilter>('both');
 
   const [deck, setDeck] = useState<Character[]>([]);
@@ -33,10 +33,9 @@ export default function App() {
   const source = getSource(sourceId);
 
   const loadMore = useCallback(
-    async (mode: LoadingMode, activeSourceId: SourceId = sourceId) => {
+    async (mode: LoadingMode) => {
       if (fetching.current) return;
       fetching.current = true;
-      const activeSource = getSource(activeSourceId);
       setLoadingMode(mode);
       setStatus('loading');
       setError(null);
@@ -44,7 +43,7 @@ export default function App() {
       try {
         const exclude = mode === 'initial' ? new Set<number>() : new Set(seenIds);
         const startPage = mode === 'initial' ? 1 : nextPage;
-        const result = await activeSource.fetch(
+        const result = await source.fetch(
           exclude,
           startPage,
           (loaded, total) => setProgress({ loaded, total }),
@@ -63,7 +62,7 @@ export default function App() {
         setDeck(newDeck);
         setSeenIds(newSeen);
         setNextPage(result.nextPage);
-        setCachedDeck(activeSourceId, {
+        setCachedDeck(sourceId, {
           characters: newDeck,
           nextPage: result.nextPage,
           seenIds: [...newSeen],
@@ -77,42 +76,28 @@ export default function App() {
         fetching.current = false;
       }
     },
-    [deck, nextPage, seenIds, sourceId]
+    [deck, nextPage, seenIds, source]
   );
 
-  const enterSource = useCallback(
-    (id: SourceId) => {
-      setSourceId(id);
-      setFilter('both');
-      setExhausted(false);
-      setError(null);
-
-      const cached = getCachedDeck(id);
-      if (cached && cached.characters.length > 0) {
-        setDeck(cached.characters);
-        setNextPage(cached.nextPage);
-        setSeenIds(new Set(cached.seenIds));
-        setStatus('ready');
-      } else {
-        setDeck([]);
-        setNextPage(1);
-        setSeenIds(new Set());
-        void loadMore('initial', id);
-      }
-      setScreen('filter');
-    },
-    [loadMore]
-  );
-
-  const handleDevSave = useCallback(() => {
-    // Clear the current source's cache and refetch with new tags
-    clearAll(sourceId);
-    setDeck([]);
-    setNextPage(1);
-    setSeenIds(new Set());
+  const enterMatch = useCallback(() => {
+    setFilter('both');
     setExhausted(false);
-    void loadMore('initial', sourceId);
-  }, [sourceId, loadMore]);
+    setError(null);
+
+    const cached = getCachedDeck(sourceId);
+    if (cached && cached.characters.length > 0) {
+      setDeck(cached.characters);
+      setNextPage(cached.nextPage);
+      setSeenIds(new Set(cached.seenIds));
+      setStatus('ready');
+    } else {
+      setDeck([]);
+      setNextPage(1);
+      setSeenIds(new Set());
+      void loadMore('initial');
+    }
+    setScreen('filter');
+  }, [loadMore, sourceId]);
 
   const filteredDeck = useMemo(() => source.filter(deck, filter), [source, deck, filter]);
 
@@ -214,12 +199,7 @@ export default function App() {
           exit={{ opacity: 0, y: -12 }}
           transition={{ duration: 0.2 }}
         >
-          {screen === 'landing' && (
-            <LandingScreen
-              onSelect={(src) => enterSource(src as SourceId)}
-              onDevSave={handleDevSave}
-            />
-          )}
+          {screen === 'landing' && <LandingScreen onEnter={enterMatch} />}
           {screen === 'filter' && (
             <FilterScreen
               sourceName={source.name}
