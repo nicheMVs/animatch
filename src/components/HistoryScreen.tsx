@@ -47,7 +47,15 @@ export default function HistoryScreen({ sourceId, onBack }: HistoryScreenProps) 
   );
 
   const handleClear = () => {
-    if (window.confirm("Clear history and reset the deck? You'll get a fresh shuffle next time.")) {
+    if (
+      window.confirm(
+        "Clear history and reset the deck? You'll get a fresh shuffle next time."
+      )
+    ) {
+      // Wipe both filter caches and their progress, since they share the same source.
+      clearAll(`${sourceId}__waifus`);
+      clearAll(`${sourceId}__husbandos`);
+      // Also wipe the source-level history key (used by getHistory)
       clearAll(sourceId);
       window.location.reload();
     }
