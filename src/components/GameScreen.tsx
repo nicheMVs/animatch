@@ -43,17 +43,8 @@ function shuffleArray<T>(arr: T[]): T[] {
   return copy;
 }
 
-/**
- * Resolves the current order for this filter.
- * Fresh characters (never swiped) are always prioritised; already-seen ones
- * are appended at the end so we don't rebuild the order when the user swipes.
- */
-function resolveOrder(
-  sourceId: string,
-  filterId: DeckFilter,
-  characters: Character[],
-  seenIds: Set<number>
-): number[] {
+/** Build or restore a stable shuffled order for this filter. */
+function resolveOrder(sourceId: string, filterId: DeckFilter, characters: Character[]): number[] {
   const currentIds = characters.map((c) => c.id);
   const currentSet = new Set(currentIds);
   const saved = getSavedOrder(sourceId, filterId);
@@ -70,9 +61,7 @@ function resolveOrder(
     return merged;
   }
 
-  const fresh = shuffleArray(currentIds.filter((id) => !seenIds.has(id)));
-  const used = shuffleArray(currentIds.filter((id) => seenIds.has(id)));
-  const shuffled = [...fresh, ...used];
+  const shuffled = shuffleArray(currentIds);
   setSavedOrder(sourceId, filterId, shuffled);
   return shuffled;
 }
@@ -96,14 +85,12 @@ export default function GameScreen({
   }, [characters]);
 
   const [orderIds, setOrderIds] = useState<number[]>(() =>
-    resolveOrder(sourceId, filterId, characters, seenIds)
+    resolveOrder(sourceId, filterId, characters)
   );
-  const lastKey = useRef<string>(
-    `${sourceId}:${filterId}:${characters.length}`
-  );
+  const lastKey = useRef<string>(`${sourceId}:${filterId}:${characters.length}`);
   const alreadyTriggered = useRef(false);
 
-  // Recompute order only when the character set (IDs) actually changes
+  // Rebuild the order only when the character set (IDs) actually changes
   useEffect(() => {
     const key = `${sourceId}:${filterId}:${characters.length}:${characters
       .slice(0, 5)
@@ -112,12 +99,13 @@ export default function GameScreen({
     if (key === lastKey.current) return;
     lastKey.current = key;
 
-    const next = resolveOrder(sourceId, filterId, characters, seenIds);
+    const next = resolveOrder(sourceId, filterId, characters);
     setOrderIds(next);
     alreadyTriggered.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceId, filterId, characters]);
 
+  // Current position (persisted per filter)
   const [index, setIndex] = useState<number>(() => {
     const saved = getSavedIndex(sourceId, filterId);
     return saved < orderIds.length ? saved : 0;
@@ -135,19 +123,81 @@ export default function GameScreen({
     setSavedIndex(sourceId, filterId, index);
   }, [sourceId, filterId, index]);
 
-  const current = charMap.get(orderIds[index]);
-  const next = charMap.get(orderIds[index + 1]);
-  const finished = orderIds.length > 0 && index >= orderIds.length;
+  /**
+   * Walk forward from the current index and return the first character
+   * that hasn't been seen yet. If everything after the current index has
+   * been seen, walk from the beginning. If truly nothing is unseen, null.
+   */
+  const { current, next, resolvedIndex, allSeen } = useMemo(() => {
+    if (orderIds.length === 0) {
+      return { current: undefined, next: undefined, resolvedIndex: 0, allSeen: false };
+    }
 
+    let foundIdx = -1;
+    // Forward from current index
+    for (let i = index; i < orderIds.length; i++) {
+      if (!seenIds.has(orderIds[i])) {
+        foundIdx = i;
+        break;
+      }
+    }
+    // Wrap to start if nothing found forward
+    if (foundIdx === -1) {
+      for (let i = 0; i < index; i++) {
+        if (!seenIds.has(orderIds[i])) {
+          foundIdx = i;
+          break;
+        }
+      }
+    }
+
+    if (foundIdx === -1) {
+      return {
+        current: undefined,
+        next: undefined,
+        resolvedIndex: orderIds.length,
+        allSeen: true,
+      };
+    }
+
+    // Find the next unseen AFTER foundIdx (for the preview card)
+    let nextIdx = -1;
+    for (let i = foundIdx + 1; i < orderIds.length; i++) {
+      if (!seenIds.has(orderIds[i])) {
+        nextIdx = i;
+        break;
+      }
+    }
+
+    return {
+      current: charMap.get(orderIds[foundIdx]),
+      next: nextIdx !== -1 ? charMap.get(orderIds[nextIdx]) : undefined,
+      resolvedIndex: foundIdx,
+      allSeen: false,
+    };
+  }, [orderIds, seenIds, index, charMap]);
+
+  // Keep the stored index aligned with the resolved one
   useEffect(() => {
-    orderIds.slice(index + 1, index + 4).forEach((id) => {
+    if (resolvedIndex !== index && !allSeen) {
+      setIndex(resolvedIndex);
+    }
+  }, [resolvedIndex, index, allSeen]);
+
+  const finished = allSeen || (orderIds.length > 0 && index >= orderIds.length);
+
+  // Preload
+  useEffect(() => {
+    if (!current) return;
+    const currentIdx = orderIds.indexOf(current.id);
+    orderIds.slice(currentIdx + 1, currentIdx + 4).forEach((id) => {
       const c = charMap.get(id);
       if (c?.imageUrl) {
         const img = new Image();
         img.src = c.imageUrl;
       }
     });
-  }, [orderIds, index, charMap]);
+  }, [orderIds, current, charMap]);
 
   useEffect(() => {
     if (finished && !exhausted && !alreadyTriggered.current) {
@@ -167,15 +217,15 @@ export default function GameScreen({
         timestamp: Date.now(),
       });
       onMarkSeen(current.id);
-      setIndex((i) => i + 1);
+      setIndex(resolvedIndex + 1);
     },
-    [current, sourceId, onMarkSeen]
+    [current, sourceId, onMarkSeen, resolvedIndex]
   );
 
   const handleSkip = useCallback(() => {
     if (current) onMarkSeen(current.id);
-    setIndex((i) => i + 1);
-  }, [current, onMarkSeen]);
+    setIndex(resolvedIndex + 1);
+  }, [current, onMarkSeen, resolvedIndex]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -196,7 +246,7 @@ export default function GameScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  if (orderIds.length === 0 && exhausted) {
+  if (finished && exhausted) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6">
         <motion.div
@@ -265,7 +315,7 @@ export default function GameScreen({
         <div className="text-center">
           <h1 className="font-display text-2xl leading-none tracking-tight text-white">AniMatch</h1>
           <p className="mt-1 text-[10px] font-light uppercase tracking-[0.25em] text-white/40">
-            {filterLabel} · {Math.min(index + 1, orderIds.length)}/{orderIds.length}
+            {filterLabel} · {Math.min(resolvedIndex + 1, orderIds.length)}/{orderIds.length}
           </p>
         </div>
         <button

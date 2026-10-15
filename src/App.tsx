@@ -130,11 +130,7 @@ export default function App() {
     setScreen('filter');
   }, [loadMore, sourceId]);
 
-  /**
-   * Filtered deck NO LONGER excludes seen characters. That filtering happens
-   * inside GameScreen when it builds the order, so swiping one card doesn't
-   * rebuild the entire list mid-interaction.
-   */
+  // Simple — the deck is just the filter applied. Seen tracking is GameScreen's job.
   const filteredDeck = useMemo(() => source.filter(deck, filter), [source, deck, filter]);
 
   const openHistory = (from: Screen) => {
