@@ -25,7 +25,8 @@ interface CharacterCardProps {
   onSkip: () => void;
 }
 
-const FLY_DURATION = 0.42;
+const FLY_DURATION = 0.55;
+const FLY_EASING = [0.4, 0.7, 0.4, 1] as const;
 
 function exitTarget(dir: SwipeDirection) {
   const w = typeof window !== 'undefined' ? window.innerWidth : 800;
@@ -117,7 +118,7 @@ const CharacterCard = forwardRef<CharacterCardHandle, CharacterCardProps>(functi
     if (busy.current) return;
     busy.current = true;
     const target = exitTarget(action.swipeDirection);
-    const opts = { duration: FLY_DURATION, ease: [0.32, 0.72, 0.35, 1] as const };
+    const opts = { duration: FLY_DURATION, ease: FLY_EASING };
     animate(x, target.x, opts);
     animate(y, target.y, opts).then(() => onAction(action.id));
   };
