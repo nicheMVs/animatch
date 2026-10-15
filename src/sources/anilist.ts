@@ -5,19 +5,12 @@ import type { SourceDefinition } from './types';
 const QUERY = `
   query ($page: Int, $perPage: Int) {
     Page(page: $page, perPage: $perPage) {
-      media(type: ANIME, sort: POPULARITY_DESC) {
-        title { romaji english }
-        characters(sort: ROLE, perPage: 25) {
-          edges {
-            node {
-              id
-              name { full native }
-              image { large medium }
-              gender
-              favourites
-            }
-          }
-        }
+      characters(sort: FAVOURITES_DESC) {
+        id
+        name { full native }
+        image { large medium }
+        gender
+        favourites
       }
     }
   }
@@ -34,25 +27,17 @@ interface AniListCharacter {
 interface AniListResponse {
   data?: {
     Page?: {
-      media?: Array<{
-        title?: { romaji?: string | null; english?: string | null };
-        characters?: { edges?: Array<{ node?: AniListCharacter }> };
-      }>;
+      characters?: AniListCharacter[];
     };
   };
   errors?: { message: string }[];
 }
 
-const PER_PAGE = 25;
+const PER_PAGE = 50;
+/** AniList has ~100k characters; fetch a random slice from the top ~5,000. */
+const MAX_START_PAGE = 100;
 
-// Top ~400 popular anime — the biggest hits people actually recognize.
-const TOP_RANGE_END = 16;
-// Deeper range for variety — still popular but less mainstream.
-const VARIETY_RANGE_END = 120;
-
-async function fetchPage(
-  page: number
-): Promise<Array<{ character: AniListCharacter; anime: string | null }>> {
+async function fetchPage(page: number): Promise<AniListCharacter[]> {
   const response = await fetch(SETTINGS.ANILIST_BASE_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -61,104 +46,77 @@ async function fetchPage(
   if (!response.ok) throw new Error(`AniList request failed (${response.status})`);
   const json: AniListResponse = await response.json();
   if (json.errors && json.errors.length > 0) throw new Error(json.errors[0].message);
-
-  const media = json.data?.Page?.media ?? [];
-  const rows: Array<{ character: AniListCharacter; anime: string | null }> = [];
-  for (const m of media) {
-    const animeTitle = m.title?.english || m.title?.romaji || null;
-    for (const edge of m.characters?.edges ?? []) {
-      if (edge.node) rows.push({ character: edge.node, anime: animeTitle });
-    }
-  }
-  return rows;
+  return json.data?.Page?.characters ?? [];
 }
 
-function toCharacter(row: { character: AniListCharacter; anime: string | null }): Character {
-  const a = row.character;
+function toCharacter(a: AniListCharacter): Character {
   return {
     id: a.id,
     name: a.name.full,
-    anime: row.anime,
+    anime: null,
     imageUrl: a.image.large || a.image.medium || null,
     gender: a.gender,
   };
 }
 
-/** Fisher-Yates shuffle. */
-function shuffleInPlace<T>(arr: T[]): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
-/**
- * Fetch a mix: a couple of pages from the top of popularity, plus a couple
- * from a random deeper page. Combined with the exclude set, this guarantees
- * a fresh, recognizable, varied deck every time.
- */
 async function fetchAnilistCharacters(
   filter: DeckFilter,
   excludeIds: Set<number> = new Set(),
-  startPage = 1,
+  _startPage = 1,
   onProgress?: (loaded: number, total: number) => void,
   target: number = SETTINGS.DECK_SIZE,
   randomStart = false
 ) {
-  const seen = new Set<number>(excludeIds);
   const collected: Character[] = [];
+  const seen = new Set<number>(excludeIds);
   const wantedGender = filter === 'waifus' ? 'female' : 'male';
 
-  // Build a list of pages to scan: 2 from the top, 2-3 from a random deeper section.
-  const pagesToScan: number[] = [];
+  // Pick a random page each time to guarantee a different slice
+  let currentPage = randomStart ? Math.floor(Math.random() * MAX_START_PAGE) + 1 : 1;
+  const pagesToScan = Math.ceil(target / PER_PAGE) + 5;
+  let exhausted = false;
 
-  if (randomStart) {
-    // Top: pick 2 random pages from the top range
-    const topA = 1 + Math.floor(Math.random() * TOP_RANGE_END);
-    const topB = 1 + Math.floor(Math.random() * TOP_RANGE_END);
-    pagesToScan.push(topA, topB);
-
-    // Variety: 3 consecutive-ish pages from a random offset in the deeper range
-    const varietyStart =
-      TOP_RANGE_END + Math.floor(Math.random() * (VARIETY_RANGE_END - TOP_RANGE_END - 3));
-    pagesToScan.push(varietyStart, varietyStart + 1, varietyStart + 2);
-  } else {
-    pagesToScan.push(startPage);
-  }
-
-  for (const page of pagesToScan) {
-    if (collected.length >= target) break;
-
-    let batch: Array<{ character: AniListCharacter; anime: string | null }>;
+  for (let i = 0; i < pagesToScan; i++) {
+    let batch: AniListCharacter[];
     try {
-      batch = await fetchPage(page);
+      batch = await fetchPage(currentPage);
     } catch (err) {
-      if (collected.length === 0 && pagesToScan.indexOf(page) === 0) throw err;
-      continue;
+      if (collected.length === 0) throw err;
+      break;
     }
 
-    for (const row of batch) {
-      const g = (row.character.gender || '').toLowerCase();
+    if (batch.length === 0) {
+      // Wrap around if we hit the end
+      if (currentPage > 1 && randomStart) {
+        currentPage = 1;
+        continue;
+      }
+      exhausted = true;
+      break;
+    }
+
+    for (const c of batch) {
+      const g = (c.gender || '').toLowerCase();
       if (g !== wantedGender) continue;
-      if (seen.has(row.character.id)) continue;
-      seen.add(row.character.id);
-      collected.push(toCharacter(row));
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      collected.push(toCharacter(c));
       if (collected.length >= target) break;
     }
 
     onProgress?.(Math.min(collected.length, target), target);
+    currentPage += 1;
+    if (collected.length >= target) break;
     await new Promise((r) => setTimeout(r, SETTINGS.ANILIST_REQUEST_DELAY_MS));
   }
 
-  // Shuffle so pages aren't laid out in order
-  shuffleInPlace(collected);
+  // Shuffle so results aren't in favorites order
+  for (let i = collected.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [collected[i], collected[j]] = [collected[j], collected[i]];
+  }
 
-  return {
-    characters: collected,
-    nextPage: 1,
-    exhausted: collected.length === 0,
-  };
+  return { characters: collected, nextPage: currentPage, exhausted };
 }
 
 function filterAnilist(deck: Character[], filter: DeckFilter): Character[] {
