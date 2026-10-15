@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, History, SkipForward } from 'lucide-react';
 import { ACTIONS_IN_BUTTON_ORDER, getActionByDirection, type SwipeDirection } from '../config/actions';
-import { addChoice, getSavedIndex, setSavedIndex } from '../services/storage';
+import {
+  addChoice,
+  getSavedIndex,
+  getSavedOrder,
+  setSavedIndex,
+  setSavedOrder,
+} from '../services/storage';
 import type { Character, DeckFilter } from '../types/character';
 import ActionButton from './ActionButton';
 import CharacterCard, { type CharacterCardHandle } from './CharacterCard';
@@ -25,7 +31,6 @@ const KEY_TO_DIRECTION: Record<string, SwipeDirection> = {
   ArrowDown: 'down',
 };
 
-/** Fisher–Yates shuffle. */
 function shuffleArray<T>(arr: T[]): T[] {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -33,6 +38,44 @@ function shuffleArray<T>(arr: T[]): T[] {
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
+}
+
+/**
+ * Build (or restore) the shuffled order for this filter.
+ * The order is saved to localStorage so it survives refreshes.
+ * Only regenerated when the saved order no longer matches the character set.
+ */
+function resolveOrder(
+  sourceId: string,
+  filterId: DeckFilter,
+  characters: Character[]
+): number[] {
+  const currentIds = characters.map((c) => c.id);
+  const currentSet = new Set(currentIds);
+
+  const saved = getSavedOrder(sourceId, filterId);
+
+  if (saved) {
+    // Keep only the IDs that still exist in the character set
+    const valid = saved.filter((id) => currentSet.has(id));
+    // Any new IDs not already in the saved order get appended (shuffled)
+    const savedSet = new Set(valid);
+    const additions = shuffleArray(currentIds.filter((id) => !savedSet.has(id)));
+
+    // If nothing changed, return the saved order as-is
+    if (additions.length === 0 && valid.length === saved.length) {
+      return saved;
+    }
+
+    const merged = [...valid, ...additions];
+    setSavedOrder(sourceId, filterId, merged);
+    return merged;
+  }
+
+  // No saved order — shuffle once and save
+  const shuffled = shuffleArray(currentIds);
+  setSavedOrder(sourceId, filterId, shuffled);
+  return shuffled;
 }
 
 export default function GameScreen({
@@ -51,39 +94,32 @@ export default function GameScreen({
     return m;
   }, [characters]);
 
-  /**
-   * The shuffled order for this filter. We keep it in state so it doesn't
-   * re-shuffle on every render. It regenerates only when the filter or the
-   * underlying set of characters changes.
-   */
   const [orderIds, setOrderIds] = useState<number[]>(() =>
-    shuffleArray(characters.map((c) => c.id))
+    resolveOrder(sourceId, filterId, characters)
   );
-  const lastCharactersKey = useRef<string>('');
+  const lastKey = useRef<string>(`${sourceId}:${filterId}:${characters.length}`);
+  const alreadyTriggered = useRef(false);
 
-  // Recompute the shuffled order when the character set changes
+  // Regenerate the order only if the character set actually changed
   useEffect(() => {
-    // Build a stable key from the current characters so we don't reshuffle
-    // on every render — only when the actual list changes.
-    const key = `${filterId}:${characters.length}:${characters
+    const key = `${sourceId}:${filterId}:${characters.length}:${characters
       .slice(0, 5)
       .map((c) => c.id)
       .join(',')}`;
+    if (key === lastKey.current) return;
+    lastKey.current = key;
 
-    if (key === lastCharactersKey.current) return;
-    lastCharactersKey.current = key;
-
-    setOrderIds(shuffleArray(characters.map((c) => c.id)));
+    const next = resolveOrder(sourceId, filterId, characters);
+    setOrderIds(next);
     alreadyTriggered.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterId, characters]);
+  }, [sourceId, filterId, characters]);
 
   const [index, setIndex] = useState<number>(() => {
     const saved = getSavedIndex(sourceId, filterId);
     return saved < orderIds.length ? saved : 0;
   });
   const cardRef = useRef<CharacterCardHandle>(null);
-  const alreadyTriggered = useRef(false);
 
   // Restore index when the filter changes
   useEffect(() => {

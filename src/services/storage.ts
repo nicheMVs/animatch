@@ -96,8 +96,6 @@ export function clearCachedDeck(sourceId: string): void {
 }
 
 // ── Per-filter deck progress ─────────────────────────────
-// The current card index is stored per (sourceId, filter) so switching
-// between Waifus / Husbandos / Everyone each keeps its own place.
 
 export function getSavedIndex(sourceId: string, filter: string): number {
   const value = readJson<number>(scopedKey(SETTINGS.PROGRESS_KEY, sourceId, filter), 0);
@@ -113,9 +111,33 @@ export function clearSavedIndex(sourceId: string, filter?: string): void {
     if (filter) {
       localStorage.removeItem(scopedKey(SETTINGS.PROGRESS_KEY, sourceId, filter));
     } else {
-      // Wipe all filters for this source
       for (const f of ['waifus', 'husbandos', 'both']) {
         localStorage.removeItem(scopedKey(SETTINGS.PROGRESS_KEY, sourceId, f));
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+// ── Per-filter shuffle order ─────────────────────────────
+
+export function getSavedOrder(sourceId: string, filter: string): number[] | null {
+  const value = readJson<number[] | null>(scopedKey(SETTINGS.ORDER_KEY, sourceId, filter), null);
+  return Array.isArray(value) && value.length > 0 ? value : null;
+}
+
+export function setSavedOrder(sourceId: string, filter: string, order: number[]): void {
+  writeJson(scopedKey(SETTINGS.ORDER_KEY, sourceId, filter), order);
+}
+
+export function clearSavedOrder(sourceId: string, filter?: string): void {
+  try {
+    if (filter) {
+      localStorage.removeItem(scopedKey(SETTINGS.ORDER_KEY, sourceId, filter));
+    } else {
+      for (const f of ['waifus', 'husbandos', 'both']) {
+        localStorage.removeItem(scopedKey(SETTINGS.ORDER_KEY, sourceId, f));
       }
     }
   } catch {
@@ -129,4 +151,5 @@ export function clearAll(sourceId: string): void {
   clearHistory(sourceId);
   clearCachedDeck(sourceId);
   clearSavedIndex(sourceId);
+  clearSavedOrder(sourceId);
 }
