@@ -1,35 +1,28 @@
 import type { Character, DeckFilter } from '../types/character';
 import type { SourceDefinition, FetchResult } from './types';
 
-interface GelbooruPost {
+interface DanbooruPost {
   id: number;
   file_url: string;
-  preview_url: string;
-  sample_url: string;
+  preview_file_url: string;
+  large_file_url: string;
   score: number;
   rating: string;
-  tags: string;
+  tag_string: string;
+  tag_string_character: string;
 }
 
-interface GelbooruResponse {
-  post?: GelbooruPost[] | GelbooruPost;
-  '@attributes'?: { count?: number; offset?: number };
-}
+const POSTS_PER_PAGE = 100;
 
-const POSTS_PER_PAGE = 42;
-
-function extractCharacterName(tags: string): string {
-  const list = tags.split(' ').filter(Boolean);
-  for (const tag of list) {
-    const match = tag.match(/^([a-z0-9_]+)_\(/);
-    if (match) {
-      return match[1]
-        .split('_')
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(' ');
-    }
-  }
-  return 'Unknown';
+function extractCharacterName(post: DanbooruPost): string {
+  // Danbooru explicitly provides character tags
+  const chars = post.tag_string_character.trim();
+  if (!chars) return 'Unknown';
+  const first = chars.split(' ')[0];
+  return first
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function extractGender(tags: string): 'female' | 'male' | null {
@@ -43,28 +36,24 @@ function extractGender(tags: string): 'female' | 'male' | null {
 
 function proxyImage(rawUrl: string | null | undefined): string | null {
   if (!rawUrl) return null;
-  return `/api/gelbooru-image?url=${encodeURIComponent(rawUrl)}`;
+  return `/api/danbooru-image?url=${encodeURIComponent(rawUrl)}`;
 }
 
-function toCharacter(post: GelbooruPost): Character {
-  // preview_url (thumbnail) is the only image that reliably bypasses hotlink protection
+function toCharacter(post: DanbooruPost): Character {
+  // Prefer large_file_url for a good balance of quality and speed
+  const image = post.large_file_url || post.preview_file_url || post.file_url;
   return {
     id: post.id,
-    name: extractCharacterName(post.tags),
-    imageUrl: proxyImage(post.preview_url),
-    gender: extractGender(post.tags),
+    name: extractCharacterName(post),
+    imageUrl: proxyImage(image),
+    gender: extractGender(post.tag_string),
     favorites: post.score ?? 0,
   };
 }
 
-function normalizeBatch(raw: GelbooruResponse): GelbooruPost[] {
-  if (!raw.post) return [];
-  return Array.isArray(raw.post) ? raw.post : [raw.post];
-}
-
-async function fetchGelbooruCharacters(
+async function fetchDanbooruCharacters(
   excludeIds: Set<number> = new Set(),
-  startPage = 0,
+  startPage = 1,
   onProgress?: (loaded: number, total: number) => void,
   target = 200,
   randomStart = false
@@ -73,37 +62,36 @@ async function fetchGelbooruCharacters(
   const seen = new Set<number>(excludeIds);
   const pagesToScan = Math.ceil(target / POSTS_PER_PAGE) + 5;
 
-  let currentPage = randomStart ? Math.floor(Math.random() * 500) : startPage;
+  // Danbooru pagination uses page numbers, not offsets. Random start is capped
+  // to avoid deep pages where many posts may be hidden/deleted.
+  let currentPage = randomStart ? Math.floor(Math.random() * 100) + 1 : startPage;
   let exhausted = false;
 
   const queryTags = 'solo rating:explicit';
 
   for (let i = 0; i < pagesToScan; i++) {
-    let batch: GelbooruPost[] = [];
+    let batch: DanbooruPost[] = [];
     try {
       const response = await fetch(
-        `/api/gelbooru?tags=${encodeURIComponent(queryTags)}&pid=${currentPage}&limit=${POSTS_PER_PAGE}`
+        `/api/danbooru?tags=${encodeURIComponent(queryTags)}&page=${currentPage}&limit=${POSTS_PER_PAGE}`
       );
       if (!response.ok) throw new Error(`Proxy returned ${response.status}`);
-      const json: GelbooruResponse = await response.json();
-      batch = normalizeBatch(json);
+      const json = await response.json();
+      batch = Array.isArray(json) ? json : [];
     } catch (err) {
       if (collected.length === 0) throw err;
       break;
     }
 
     if (batch.length === 0) {
-      if (currentPage > 0 && randomStart) {
-        currentPage = 0;
-        continue;
-      }
+      if (currentPage > 1 && randomStart) { currentPage = 1; continue; }
       exhausted = true;
       break;
     }
 
     for (const post of batch) {
       if (seen.has(post.id)) continue;
-      const name = extractCharacterName(post.tags);
+      const name = extractCharacterName(post);
       if (name === 'Unknown') continue;
       seen.add(post.id);
       collected.push(toCharacter(post));
@@ -114,7 +102,7 @@ async function fetchGelbooruCharacters(
     currentPage += 1;
 
     if (collected.length >= target) break;
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 500));
   }
 
   for (let i = collected.length - 1; i > 0; i--) {
@@ -125,21 +113,21 @@ async function fetchGelbooruCharacters(
   return { characters: collected, nextPage: currentPage, exhausted };
 }
 
-function filterGelbooru(deck: Character[], filter: DeckFilter): Character[] {
+function filterDanbooru(deck: Character[], filter: DeckFilter): Character[] {
   if (filter === 'both') return deck;
   const target = filter === 'waifus' ? 'female' : 'male';
   return deck.filter((c) => (c.gender || '').toLowerCase() === target);
 }
 
-export const gelbooruSource: SourceDefinition = {
-  id: 'gelbooru',
+export const danbooruSource: SourceDefinition = {
+  id: 'danbooru',
   name: 'BooruMatch',
-  subtitle: 'Booru characters from Gelbooru',
+  subtitle: 'Booru characters from Danbooru',
   filters: [
     { id: 'waifus', label: 'Girls', subtitle: 'Solo · explicit' },
     { id: 'husbandos', label: 'Boys', subtitle: 'Solo · explicit' },
     { id: 'both', label: 'Everyone', subtitle: 'No filter' },
   ],
-  fetch: fetchGelbooruCharacters,
-  filter: filterGelbooru,
+  fetch: fetchDanbooruCharacters,
+  filter: filterDanbooru,
 };
