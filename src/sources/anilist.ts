@@ -44,8 +44,11 @@ interface AniListResponse {
 }
 
 const PER_PAGE = 25;
-/** Top ~2,500 popular anime (100 pages × 25). */
-const MAX_START_PAGE = 100;
+/** Stop scanning past this page (top ~2,500 popular anime). */
+const MAX_PAGE = 100;
+/** How far to jump ahead between fetches. Keeps the pool diverse. */
+const STRIDE_MIN = 4;
+const STRIDE_MAX = 12;
 
 async function fetchPage(
   page: number
@@ -92,11 +95,14 @@ async function fetchAnilistCharacters(
   const collected: Character[] = [];
   const seen = new Set<number>(excludeIds);
   const wantedGender = filter === 'waifus' ? 'female' : 'male';
-  const pagesToScan = Math.ceil(target / PER_PAGE) + 30;
-  let currentPage = randomStart ? Math.floor(Math.random() * MAX_START_PAGE) + 1 : startPage;
+
+  // Always start at page 1 so we get some top-tier hits.
+  // Then jump ahead in random strides so we also reach the wider pool.
+  let currentPage = randomStart ? 1 : startPage;
+  const maxIterations = Math.ceil(target / PER_PAGE) + 20;
   let exhausted = false;
 
-  for (let i = 0; i < pagesToScan; i++) {
+  for (let i = 0; i < maxIterations; i++) {
     let batch: Array<{ character: AniListCharacter; anime: string | null }>;
     try {
       batch = await fetchPage(currentPage);
@@ -106,10 +112,6 @@ async function fetchAnilistCharacters(
     }
 
     if (batch.length === 0) {
-      if (currentPage > 1 && randomStart) {
-        currentPage = 1;
-        continue;
-      }
       exhausted = true;
       break;
     }
@@ -124,11 +126,16 @@ async function fetchAnilistCharacters(
     }
 
     onProgress?.(Math.min(collected.length, target), target);
-    currentPage += 1;
     if (collected.length >= target) break;
+
+    // Jump ahead by a random stride (unless we're near the end).
+    const stride = STRIDE_MIN + Math.floor(Math.random() * (STRIDE_MAX - STRIDE_MIN + 1));
+    currentPage = Math.min(currentPage + stride, MAX_PAGE);
+
     await new Promise((r) => setTimeout(r, SETTINGS.ANILIST_REQUEST_DELAY_MS));
   }
 
+  // Shuffle the whole batch so it feels random
   for (let i = collected.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [collected[i], collected[j]] = [collected[j], collected[i]];
