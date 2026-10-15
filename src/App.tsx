@@ -67,7 +67,8 @@ export default function App() {
 
       try {
         const exclude = mode === 'initial' ? new Set<number>() : new Set(current.fetched);
-        const startPage = mode === 'initial' ? 1 : current.nextPage;
+        // Always start from a random page so each fetch is a fresh slice
+        const startPage = 1;
 
         const result = await source.fetch(
           f,
@@ -75,7 +76,7 @@ export default function App() {
           startPage,
           undefined,
           SETTINGS.DECK_SIZE,
-          mode === 'initial'
+          true // always randomStart
         );
 
         if (result.characters.length === 0) {
@@ -147,7 +148,6 @@ export default function App() {
   const renderGame = () => {
     const s = getState(filter);
 
-    // Global loading — either initial fetch or refill
     if (s.status === 'loading') {
       return (
         <div className="flex h-full flex-col px-4 pb-4 pt-3">
